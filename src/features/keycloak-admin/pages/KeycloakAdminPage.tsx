@@ -1,6 +1,9 @@
 import {
   CheckCircleOutlined,
+  DeleteOutlined,
+  EditOutlined,
   EyeOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
@@ -13,6 +16,7 @@ import {
   Button,
   Card,
   Input,
+  Popconfirm,
   Radio,
   Select,
   Space,
@@ -21,13 +25,16 @@ import {
   Tag,
   Tooltip,
   Typography,
+  message,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useState } from "react";
 import { GroupDetailDrawer } from "../components/GroupDetailDrawer";
+import { GroupFormModal } from "../components/GroupFormModal";
 import { RoleUsersDrawer } from "../components/RoleUsersDrawer";
 import { UserDetailDrawer } from "../components/UserDetailDrawer";
 import {
+  useDeleteKeycloakGroupMutation,
   useKeycloakCandidateRolesQuery,
   useKeycloakClientRolesQuery,
   useKeycloakGroupsQuery,
@@ -79,6 +86,15 @@ export function KeycloakAdminPage() {
   const [userDrawerId, setUserDrawerId] = useState<string | null>(null);
   const [roleDrawerName, setRoleDrawerName] = useState<string | null>(null);
   const [groupDrawerId, setGroupDrawerId] = useState<string | null>(null);
+
+  // Modal Crear / Editar Grupo
+  const [groupModal, setGroupModal] = useState<{
+    open: boolean;
+    group: KeycloakGroupRepresentation | null;
+  }>({ open: false, group: null });
+
+  // Mutation Eliminar Grupo
+  const deleteGroupMutation = useDeleteKeycloakGroupMutation();
 
   // Queries: Usuarios
   const usersQuery = useKeycloakUsersQuery({
@@ -134,6 +150,23 @@ export function KeycloakAdminPage() {
     }
   };
 
+  const handleDeleteGroup = async (id: string) => {
+    try {
+      await deleteGroupMutation.mutateAsync(id);
+      message.success("Grupo eliminado de Keycloak");
+    } catch (err: unknown) {
+      const axErr = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      message.error(
+        axErr.response?.data?.message ||
+          axErr.message ||
+          "No se pudo eliminar el grupo",
+      );
+    }
+  };
+
   const isFetchingCurrent =
     activeTab === "users"
       ? usersQuery.isFetching
@@ -143,7 +176,6 @@ export function KeycloakAdminPage() {
           realmRolesQuery.isFetching
         : groupsQuery.isFetching;
 
-  // Normalizar filas de roles según el alcance seleccionado
   const roleRows: UnifiedRoleRow[] = (() => {
     if (roleScope === "candidates") {
       return (candidateRolesQuery.data ?? []).map(
@@ -183,7 +215,7 @@ export function KeycloakAdminPage() {
         ? clientRolesQuery.isLoading
         : realmRolesQuery.isLoading;
 
-  // Columnas: Usuarios
+  // Columnas: Usuarios (Solo lectura + Asignación de Grupos)
   const userColumns: ColumnsType<KeycloakAdminUser> = [
     {
       title: "Usuario",
@@ -240,15 +272,17 @@ export function KeycloakAdminPage() {
     {
       title: "Acciones",
       key: "actions",
-      width: 150,
+      width: 180,
       fixed: "right",
       render: (_, record) => (
         <Button
+          type="primary"
+          ghost
           size="small"
-          icon={<EyeOutlined />}
+          icon={<TeamOutlined />}
           onClick={() => setUserDrawerId(record.id)}
         >
-          Roles y Grupos
+          Asignar Grupos
         </Button>
       ),
     },
@@ -313,7 +347,7 @@ export function KeycloakAdminPage() {
     },
   ];
 
-  // Columnas: Grupos
+  // Columnas: Grupos (Crear, Editar, Eliminar y Miembros)
   const groupColumns: ColumnsType<KeycloakGroupRepresentation> = [
     {
       title: "Grupo",
@@ -363,16 +397,44 @@ export function KeycloakAdminPage() {
     {
       title: "Acciones",
       key: "actions",
-      width: 160,
+      width: 230,
       fixed: "right",
       render: (_, record) => (
-        <Button
-          size="small"
-          icon={<EyeOutlined />}
-          onClick={() => setGroupDrawerId(record.id)}
-        >
-          Ver Miembros
-        </Button>
+        <Space size="small">
+          <Button
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => setGroupDrawerId(record.id)}
+          >
+            Miembros
+          </Button>
+
+          <Tooltip title="Editar grupo">
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => setGroupModal({ open: true, group: record })}
+            />
+          </Tooltip>
+
+          <Popconfirm
+            title="¿Eliminar este grupo?"
+            description={`Se eliminará el grupo "${record.name}" en Keycloak.`}
+            okText="Sí, eliminar"
+            cancelText="Cancelar"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDeleteGroup(record.id)}
+          >
+            <Tooltip title="Eliminar grupo">
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                loading={deleteGroupMutation.isPending}
+              />
+            </Tooltip>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -397,17 +459,26 @@ export function KeycloakAdminPage() {
             Directorio Keycloak (Usuarios, Roles y Grupos)
           </Title>
           <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
-            Consulta identidades, roles candidatos (candidateGroups) y grupos
-            organizacionales para la asignación de tareas BPMN.
+            Consulta usuarios, gestiona grupos organizacionales y asigna
+            usuarios a grupos para tareas BPMN.
           </Paragraph>
         </div>
 
-        <Button
-          icon={<ReloadOutlined spin={isFetchingCurrent} />}
-          onClick={handleRefresh}
-        >
-          Actualizar
-        </Button>
+        <Space wrap>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setGroupModal({ open: true, group: null })}
+          >
+            Nuevo Grupo
+          </Button>
+          <Button
+            icon={<ReloadOutlined spin={isFetchingCurrent} />}
+            onClick={handleRefresh}
+          >
+            Actualizar
+          </Button>
+        </Space>
       </div>
 
       {usersQuery.isError && (
@@ -619,36 +690,38 @@ export function KeycloakAdminPage() {
                 <div
                   style={{ display: "flex", flexDirection: "column", gap: 16 }}
                 >
-                  <Space wrap>
-                    <Input
-                      placeholder="Buscar grupo por nombre..."
-                      value={groupSearchInput}
-                      onChange={(e) => setGroupSearchInput(e.target.value)}
-                      onPressEnter={() =>
-                        setAppliedGroupSearch(groupSearchInput.trim())
-                      }
-                      style={{ width: 280 }}
-                      allowClear
-                      prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-                    />
-                    <Button
-                      type="primary"
-                      onClick={() =>
-                        setAppliedGroupSearch(groupSearchInput.trim())
-                      }
-                    >
-                      Buscar
-                    </Button>
-                    {appliedGroupSearch && (
+                  <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
+                    <Space wrap>
+                      <Input
+                        placeholder="Buscar grupo por nombre..."
+                        value={groupSearchInput}
+                        onChange={(e) => setGroupSearchInput(e.target.value)}
+                        onPressEnter={() =>
+                          setAppliedGroupSearch(groupSearchInput.trim())
+                        }
+                        style={{ width: 280 }}
+                        allowClear
+                        prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+                      />
                       <Button
-                        onClick={() => {
-                          setGroupSearchInput("");
-                          setAppliedGroupSearch("");
-                        }}
+                        type="primary"
+                        onClick={() =>
+                          setAppliedGroupSearch(groupSearchInput.trim())
+                        }
                       >
-                        Limpiar
+                        Buscar
                       </Button>
-                    )}
+                      {appliedGroupSearch && (
+                        <Button
+                          onClick={() => {
+                            setGroupSearchInput("");
+                            setAppliedGroupSearch("");
+                          }}
+                        >
+                          Limpiar
+                        </Button>
+                      )}
+                    </Space>
                   </Space>
 
                   <Table<KeycloakGroupRepresentation>
@@ -656,7 +729,7 @@ export function KeycloakAdminPage() {
                     columns={groupColumns}
                     dataSource={groupsQuery.data ?? []}
                     loading={groupsQuery.isLoading}
-                    scroll={{ x: 760 }}
+                    scroll={{ x: 820 }}
                     pagination={{
                       pageSize: 10,
                       showSizeChanger: true,
@@ -671,7 +744,14 @@ export function KeycloakAdminPage() {
         />
       </Card>
 
-      {/* Drawer: Detalle de Usuario, sus Roles y sus Grupos */}
+      {/* Modal: Crear / Editar Grupo */}
+      <GroupFormModal
+        open={groupModal.open}
+        group={groupModal.group}
+        onClose={() => setGroupModal({ open: false, group: null })}
+      />
+
+      {/* Drawer: Detalle de Usuario y Asignar/Quitar Grupos */}
       <UserDetailDrawer
         open={Boolean(userDrawerId)}
         userId={userDrawerId}
@@ -689,7 +769,7 @@ export function KeycloakAdminPage() {
         }}
       />
 
-      {/* Drawer: Detalle y Miembros de Grupo */}
+      {/* Drawer: Detalle y Miembros de Grupo (Agregar / Quitar Miembros) */}
       <GroupDetailDrawer
         open={Boolean(groupDrawerId)}
         groupId={groupDrawerId}
@@ -702,4 +782,3 @@ export function KeycloakAdminPage() {
     </div>
   );
 }
-

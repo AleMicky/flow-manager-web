@@ -1,24 +1,34 @@
 import {
   CheckCircleOutlined,
+  DeleteOutlined,
+  PlusOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import {
   Badge,
+  Button,
   Descriptions,
   Divider,
   Drawer,
   Empty,
+  Popconfirm,
+  Select,
   Space,
   Spin,
   Tag,
   Typography,
+  message,
 } from "antd";
+import { useState } from "react";
 import {
+  useAssignUserToGroupMutation,
+  useKeycloakGroupsQuery,
   useKeycloakUserDetailQuery,
   useKeycloakUserGroupsQuery,
   useKeycloakUserRolesQuery,
+  useRemoveUserFromGroupMutation,
 } from "../hooks/useKeycloakAdminQueries";
 
 const { Text, Title } = Typography;
@@ -34,6 +44,9 @@ export function UserDetailDrawer({
   userId,
   onClose,
 }: UserDetailDrawerProps) {
+  const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(
+    undefined,
+  );
   const isEnabled = open && Boolean(userId);
 
   const {
@@ -48,7 +61,60 @@ export function UserDetailDrawer({
   const { data: groupsData, isLoading: loadingGroups } =
     useKeycloakUserGroupsQuery(userId ?? undefined, isEnabled);
 
+  const { data: allGroups } = useKeycloakGroupsQuery(
+    { first: 0, max: 100 },
+    isEnabled,
+  );
+
+  const assignGroupMutation = useAssignUserToGroupMutation();
+  const removeGroupMutation = useRemoveUserFromGroupMutation();
+
   const isLoading = loadingUser || loadingRoles || loadingGroups;
+
+  const assignedGroupIds = new Set((groupsData ?? []).map((g) => g.id));
+  const availableGroups = (allGroups ?? []).filter(
+    (g) => !assignedGroupIds.has(g.id),
+  );
+
+  const handleAssignGroup = async () => {
+    if (!userId || !selectedGroupId) return;
+    try {
+      await assignGroupMutation.mutateAsync({
+        userId,
+        groupId: selectedGroupId,
+      });
+      setSelectedGroupId(undefined);
+      message.success("Usuario asignado al grupo correctamente");
+    } catch (err: unknown) {
+      const axErr = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      message.error(
+        axErr.response?.data?.message ||
+          axErr.message ||
+          "No se pudo asignar el usuario al grupo",
+      );
+    }
+  };
+
+  const handleRemoveGroup = async (groupId: string) => {
+    if (!userId) return;
+    try {
+      await removeGroupMutation.mutateAsync({ userId, groupId });
+      message.success("Usuario removido del grupo");
+    } catch (err: unknown) {
+      const axErr = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      message.error(
+        axErr.response?.data?.message ||
+          axErr.message ||
+          "No se pudo quitar el usuario del grupo",
+      );
+    }
+  };
 
   return (
     <Drawer
@@ -122,6 +188,84 @@ export function UserDetailDrawer({
 
           <Divider style={{ margin: "4px 0" }} />
 
+          {/* Grupos del usuario (Asignar / Quitar) */}
+          <div>
+            <Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>
+              <TeamOutlined style={{ marginRight: 8, color: "#10b981" }} />
+              Grupos del Usuario
+            </Title>
+
+            <Space style={{ width: "100%", marginBottom: 12 }} wrap>
+              <Select
+                placeholder="Seleccionar grupo para asignar..."
+                value={selectedGroupId}
+                onChange={setSelectedGroupId}
+                style={{ width: 320 }}
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                options={availableGroups.map((g) => ({
+                  value: g.id,
+                  label: `${g.name} (${g.path})`,
+                }))}
+              />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!selectedGroupId}
+                loading={assignGroupMutation.isPending}
+                onClick={handleAssignGroup}
+              >
+                Asignar a grupo
+              </Button>
+            </Space>
+
+            {groupsData?.length ? (
+              <Space wrap size={[8, 8]}>
+                {groupsData.map((group) => (
+                  <Tag
+                    color="cyan"
+                    key={group.id}
+                    style={{
+                      padding: "4px 10px",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <span>
+                      <Text strong>{group.name}</Text>{" "}
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        ({group.path})
+                      </Text>
+                    </span>
+                    <Popconfirm
+                      title="¿Quitar usuario de este grupo?"
+                      okText="Sí, quitar"
+                      cancelText="No"
+                      onConfirm={() => handleRemoveGroup(group.id)}
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        loading={removeGroupMutation.isPending}
+                        style={{ padding: 0, height: 18, width: 18 }}
+                      />
+                    </Popconfirm>
+                  </Tag>
+                ))}
+              </Space>
+            ) : (
+              <Text type="secondary">
+                El usuario no pertenece a ningún grupo actualmente.
+              </Text>
+            )}
+          </div>
+
+          <Divider style={{ margin: "4px 0" }} />
+
           {/* Roles asignados */}
           <div>
             <Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>
@@ -137,7 +281,10 @@ export function UserDetailDrawer({
                   <Space wrap size={[4, 8]}>
                     {rolesData.effectiveRoles.map((role) => (
                       <Tag color="geekblue" key={role}>
-                        <Text copyable={{ text: role }} style={{ color: "inherit" }}>
+                        <Text
+                          copyable={{ text: role }}
+                          style={{ color: "inherit" }}
+                        >
                           {role}
                         </Text>
                       </Tag>
@@ -177,36 +324,8 @@ export function UserDetailDrawer({
               </Descriptions.Item>
             </Descriptions>
           </div>
-
-          <Divider style={{ margin: "4px 0" }} />
-
-          {/* Grupos del usuario */}
-          <div>
-            <Title level={5} style={{ marginTop: 0, marginBottom: 12 }}>
-              <TeamOutlined style={{ marginRight: 8, color: "#10b981" }} />
-              Grupos a los que pertenece
-            </Title>
-
-            {groupsData?.length ? (
-              <Space wrap size={[8, 8]}>
-                {groupsData.map((group) => (
-                  <Tag color="cyan" key={group.id} style={{ padding: "4px 10px" }}>
-                    <Text strong>{group.name}</Text>{" "}
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      ({group.path})
-                    </Text>
-                  </Tag>
-                ))}
-              </Space>
-            ) : (
-              <Text type="secondary">
-                El usuario no pertenece a ningún grupo.
-              </Text>
-            )}
-          </div>
         </div>
       )}
     </Drawer>
   );
 }
-

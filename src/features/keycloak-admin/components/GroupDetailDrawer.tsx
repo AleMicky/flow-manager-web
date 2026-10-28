@@ -1,20 +1,34 @@
-import { TeamOutlined, UserOutlined } from "@ant-design/icons";
+import {
+  DeleteOutlined,
+  PlusOutlined,
+  TeamOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
 import {
   Badge,
+  Button,
   Descriptions,
   Divider,
   Drawer,
   Empty,
+  Popconfirm,
+  Select,
   Space,
   Spin,
   Table,
   Tag,
+  Tooltip,
   Typography,
+  message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { useState } from "react";
 import {
+  useAssignUserToGroupMutation,
   useKeycloakGroupDetailQuery,
   useKeycloakGroupMembersQuery,
+  useKeycloakUsersQuery,
+  useRemoveUserFromGroupMutation,
 } from "../hooks/useKeycloakAdminQueries";
 import type { KeycloakAdminUser } from "../types/keycloak-admin.types";
 
@@ -33,6 +47,9 @@ export function GroupDetailDrawer({
   onClose,
   onSelectUser,
 }: GroupDetailDrawerProps) {
+  const [selectedUserId, setSelectedUserId] = useState<string | undefined>(
+    undefined,
+  );
   const isEnabled = open && Boolean(groupId);
 
   const { data: group, isLoading: loadingGroup } = useKeycloakGroupDetailQuery(
@@ -46,6 +63,58 @@ export function GroupDetailDrawer({
       { first: 0, max: 100 },
       isEnabled,
     );
+
+  const { data: allUsersData } = useKeycloakUsersQuery(
+    isEnabled ? { first: 0, max: 100 } : undefined,
+  );
+
+  const assignMutation = useAssignUserToGroupMutation();
+  const removeMutation = useRemoveUserFromGroupMutation();
+
+  const memberIds = new Set((members ?? []).map((m) => m.id));
+  const availableUsers = (allUsersData?.data ?? []).filter(
+    (u) => !memberIds.has(u.id),
+  );
+
+  const handleAddMember = async () => {
+    if (!groupId || !selectedUserId) return;
+    try {
+      await assignMutation.mutateAsync({
+        userId: selectedUserId,
+        groupId,
+      });
+      setSelectedUserId(undefined);
+      message.success("Usuario agregado al grupo");
+    } catch (err: unknown) {
+      const axErr = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      message.error(
+        axErr.response?.data?.message ||
+          axErr.message ||
+          "Error al agregar el usuario al grupo",
+      );
+    }
+  };
+
+  const handleRemoveMember = async (userId: string) => {
+    if (!groupId) return;
+    try {
+      await removeMutation.mutateAsync({ userId, groupId });
+      message.success("Usuario removido del grupo");
+    } catch (err: unknown) {
+      const axErr = err as {
+        response?: { data?: { message?: string } };
+        message?: string;
+      };
+      message.error(
+        axErr.response?.data?.message ||
+          axErr.message ||
+          "Error al quitar el usuario del grupo",
+      );
+    }
+  };
 
   const columns: ColumnsType<KeycloakAdminUser> = [
     {
@@ -84,13 +153,36 @@ export function GroupDetailDrawer({
       title: "Estado",
       dataIndex: "enabled",
       key: "enabled",
-      width: 100,
+      width: 90,
       render: (enabled: boolean) =>
         enabled ? (
           <Badge status="success" text="Activo" />
         ) : (
           <Badge status="default" text="Inactivo" />
         ),
+    },
+    {
+      title: "Acción",
+      key: "actions",
+      width: 80,
+      render: (_, record) => (
+        <Popconfirm
+          title="¿Quitar usuario del grupo?"
+          okText="Quitar"
+          cancelText="Cancelar"
+          onConfirm={() => handleRemoveMember(record.id)}
+        >
+          <Tooltip title="Quitar del grupo">
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+              loading={removeMutation.isPending}
+            />
+          </Tooltip>
+        </Popconfirm>
+      ),
     },
   ];
 
@@ -153,6 +245,31 @@ export function GroupDetailDrawer({
               Miembros del Grupo ({members?.length ?? 0})
             </Title>
 
+            <Space style={{ width: "100%", marginBottom: 12 }} wrap>
+              <Select
+                placeholder="Seleccionar usuario para agregar..."
+                value={selectedUserId}
+                onChange={setSelectedUserId}
+                style={{ width: 320 }}
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                options={availableUsers.map((u) => ({
+                  value: u.id,
+                  label: `${u.fullName} (@${u.username})`,
+                }))}
+              />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!selectedUserId}
+                loading={assignMutation.isPending}
+                onClick={handleAddMember}
+              >
+                Agregar miembro
+              </Button>
+            </Space>
+
             {loadingMembers ? (
               <Spin />
             ) : members?.length ? (
@@ -174,4 +291,3 @@ export function GroupDetailDrawer({
     </Drawer>
   );
 }
-

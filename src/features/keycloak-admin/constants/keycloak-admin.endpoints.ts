@@ -1,7 +1,7 @@
 export const KEYCLOAK_ADMIN_ENDPOINTS = {
-  /** Listar y buscar usuarios */
+  /** Listar, buscar y crear usuarios */
   USERS: "/keycloak-admin/users",
-  /** Detalle de un usuario por ID */
+  /** Detalle, edición y eliminación de un usuario por ID */
   USER_BY_ID: (id: string) =>
     `/keycloak-admin/users/${encodeURIComponent(id)}`,
   /** Roles asignados a un usuario */
@@ -10,6 +10,9 @@ export const KEYCLOAK_ADMIN_ENDPOINTS = {
   /** Grupos a los que pertenece un usuario */
   USER_GROUPS: (id: string) =>
     `/keycloak-admin/users/${encodeURIComponent(id)}/groups`,
+  /** Asignar o quitar un grupo a un usuario */
+  USER_GROUP_MEMBERSHIP: (userId: string, groupId: string) =>
+    `/keycloak-admin/users/${encodeURIComponent(userId)}/groups/${encodeURIComponent(groupId)}`,
 
   /** Roles candidatos combinados (cliente + realm) para BPMN */
   ROLES_CANDIDATES: "/keycloak-admin/roles",
@@ -21,14 +24,17 @@ export const KEYCLOAK_ADMIN_ENDPOINTS = {
   USERS_BY_ROLE: (roleName: string) =>
     `/keycloak-admin/roles/${encodeURIComponent(roleName)}/users`,
 
-  /** Listar grupos de Keycloak */
+  /** Listar y crear grupos de Keycloak */
   GROUPS: "/keycloak-admin/groups",
-  /** Detalle de un grupo por ID */
+  /** Detalle, edición y eliminación de un grupo por ID */
   GROUP_BY_ID: (id: string) =>
     `/keycloak-admin/groups/${encodeURIComponent(id)}`,
   /** Usuarios miembros de un grupo */
   GROUP_MEMBERS: (id: string) =>
     `/keycloak-admin/groups/${encodeURIComponent(id)}/members`,
+  /** Asignar o quitar un miembro de un grupo */
+  GROUP_MEMBER_BY_USER: (groupId: string, userId: string) =>
+    `/keycloak-admin/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`,
 } as const;
 
 export const KEYCLOAK_ADMIN_QUERY_KEYS = {
@@ -73,4 +79,3 @@ export const KEYCLOAK_ADMIN_QUERY_KEYS = {
       params ?? {},
     ] as const,
 } as const;
-

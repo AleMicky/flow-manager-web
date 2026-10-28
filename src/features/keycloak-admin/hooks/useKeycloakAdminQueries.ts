@@ -1,14 +1,16 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KEYCLOAK_ADMIN_QUERY_KEYS } from "../constants/keycloak-admin.endpoints";
 import { keycloakAdminService } from "../services/keycloak-admin.service";
 import type {
+  CreateKeycloakGroupPayload,
   QueryKeycloakGroupsParams,
   QueryKeycloakRolesParams,
   QueryKeycloakUsersParams,
+  UpdateKeycloakGroupPayload,
 } from "../types/keycloak-admin.types";
 
 // ==========================================
-// USUARIOS
+// USUARIOS: QUERIES Y ASIGNACIÓN DE GRUPOS
 // ==========================================
 
 export function useKeycloakUsersQuery(params?: QueryKeycloakUsersParams) {
@@ -49,6 +51,34 @@ export function useKeycloakUserGroupsQuery(userId?: string, enabled = true) {
     enabled: Boolean(userId) && enabled,
     staleTime: 30_000,
     retry: false,
+  });
+}
+
+export function useAssignUserToGroupMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ userId, groupId }: { userId: string; groupId: string }) =>
+      keycloakAdminService.assignUserToGroup(userId, groupId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
+export function useRemoveUserFromGroupMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ userId, groupId }: { userId: string; groupId: string }) =>
+      keycloakAdminService.removeUserFromGroup(userId, groupId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
   });
 }
 
@@ -119,7 +149,7 @@ export function useKeycloakUsersByRoleQuery(
 }
 
 // ==========================================
-// GRUPOS
+// GRUPOS: QUERIES Y MUTATIONS
 // ==========================================
 
 export function useKeycloakGroupsQuery(
@@ -161,5 +191,51 @@ export function useKeycloakGroupMembersQuery(
     enabled: Boolean(groupId) && enabled,
     staleTime: 30_000,
     retry: false,
+  });
+}
+
+export function useCreateKeycloakGroupMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: CreateKeycloakGroupPayload) =>
+      keycloakAdminService.createGroup(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
+export function useUpdateKeycloakGroupMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: UpdateKeycloakGroupPayload;
+    }) => keycloakAdminService.updateGroup(id, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
+export function useDeleteKeycloakGroupMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => keycloakAdminService.deleteGroup(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
   });
 }

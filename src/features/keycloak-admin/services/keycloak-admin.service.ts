@@ -1,6 +1,7 @@
 import { api } from "../../../services/api";
 import { KEYCLOAK_ADMIN_ENDPOINTS } from "../constants/keycloak-admin.endpoints";
 import type {
+  CreateKeycloakGroupPayload,
   KeycloakAdminUser,
   KeycloakCandidateRole,
   KeycloakGroupRepresentation,
@@ -10,17 +11,14 @@ import type {
   QueryKeycloakGroupsParams,
   QueryKeycloakRolesParams,
   QueryKeycloakUsersParams,
+  UpdateKeycloakGroupPayload,
 } from "../types/keycloak-admin.types";
 
 export const keycloakAdminService = {
   // ==========================================
-  // USUARIOS
+  // USUARIOS (CONSULTA Y ASIGNACIÓN DE GRUPOS)
   // ==========================================
 
-  /**
-   * Lista y busca usuarios de Keycloak con paginación.
-   * Endpoint: GET /api/keycloak-admin/users
-   */
   async getUsers(
     params?: QueryKeycloakUsersParams,
   ): Promise<KeycloakPaginatedUsers> {
@@ -31,10 +29,6 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Obtiene el detalle de un usuario por su UUID.
-   * Endpoint: GET /api/keycloak-admin/users/:id
-   */
   async getUserById(id: string): Promise<KeycloakAdminUser> {
     const response = await api.get<KeycloakAdminUser>(
       KEYCLOAK_ADMIN_ENDPOINTS.USER_BY_ID(id),
@@ -42,10 +36,6 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Consulta los roles de realm, cliente y efectivos asignados a un usuario.
-   * Endpoint: GET /api/keycloak-admin/users/:id/roles
-   */
   async getUserRoles(id: string): Promise<KeycloakUserRolesResponse> {
     const response = await api.get<KeycloakUserRolesResponse>(
       KEYCLOAK_ADMIN_ENDPOINTS.USER_ROLES(id),
@@ -53,10 +43,6 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Consulta los grupos a los que pertenece un usuario.
-   * Endpoint: GET /api/keycloak-admin/users/:id/groups
-   */
   async getUserGroups(id: string): Promise<KeycloakGroupRepresentation[]> {
     const response = await api.get<KeycloakGroupRepresentation[]>(
       KEYCLOAK_ADMIN_ENDPOINTS.USER_GROUPS(id),
@@ -64,14 +50,22 @@ export const keycloakAdminService = {
     return response.data;
   },
 
+  async assignUserToGroup(userId: string, groupId: string): Promise<void> {
+    await api.put<void>(
+      KEYCLOAK_ADMIN_ENDPOINTS.USER_GROUP_MEMBERSHIP(userId, groupId),
+    );
+  },
+
+  async removeUserFromGroup(userId: string, groupId: string): Promise<void> {
+    await api.delete<void>(
+      KEYCLOAK_ADMIN_ENDPOINTS.USER_GROUP_MEMBERSHIP(userId, groupId),
+    );
+  },
+
   // ==========================================
   // ROLES (CANDIDATE GROUPS BPMN)
   // ==========================================
 
-  /**
-   * Lista los roles candidatos combinados (cliente + realm) para tareas BPMN.
-   * Endpoint: GET /api/keycloak-admin/roles
-   */
   async getCandidateRoles(
     params?: QueryKeycloakRolesParams,
   ): Promise<KeycloakCandidateRole[]> {
@@ -82,10 +76,6 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Lista los roles del realm en Keycloak.
-   * Endpoint: GET /api/keycloak-admin/roles/realm
-   */
   async getRealmRoles(
     params?: QueryKeycloakRolesParams,
   ): Promise<KeycloakRoleRepresentation[]> {
@@ -96,10 +86,6 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Lista los roles del cliente configurado en Keycloak.
-   * Endpoint: GET /api/keycloak-admin/roles/client
-   */
   async getClientRoles(
     params?: QueryKeycloakRolesParams,
   ): Promise<KeycloakRoleRepresentation[]> {
@@ -110,10 +96,6 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Lista los usuarios que poseen un rol específico.
-   * Endpoint: GET /api/keycloak-admin/roles/:roleName/users
-   */
   async getUsersByRole(
     roleName: string,
     params?: { first?: number; max?: number },
@@ -126,13 +108,9 @@ export const keycloakAdminService = {
   },
 
   // ==========================================
-  // GRUPOS
+  // GRUPOS (CREAR, EDITAR, ELIMINAR Y MIEMBROS)
   // ==========================================
 
-  /**
-   * Lista y busca grupos de Keycloak.
-   * Endpoint: GET /api/keycloak-admin/groups
-   */
   async getGroups(
     params?: QueryKeycloakGroupsParams,
   ): Promise<KeycloakGroupRepresentation[]> {
@@ -143,10 +121,16 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Obtiene el detalle de un grupo por su UUID.
-   * Endpoint: GET /api/keycloak-admin/groups/:id
-   */
+  async createGroup(
+    payload: CreateKeycloakGroupPayload,
+  ): Promise<KeycloakGroupRepresentation> {
+    const response = await api.post<KeycloakGroupRepresentation>(
+      KEYCLOAK_ADMIN_ENDPOINTS.GROUPS,
+      payload,
+    );
+    return response.data;
+  },
+
   async getGroupById(id: string): Promise<KeycloakGroupRepresentation> {
     const response = await api.get<KeycloakGroupRepresentation>(
       KEYCLOAK_ADMIN_ENDPOINTS.GROUP_BY_ID(id),
@@ -154,10 +138,21 @@ export const keycloakAdminService = {
     return response.data;
   },
 
-  /**
-   * Lista los usuarios miembros de un grupo de Keycloak.
-   * Endpoint: GET /api/keycloak-admin/groups/:id/members
-   */
+  async updateGroup(
+    id: string,
+    payload: UpdateKeycloakGroupPayload,
+  ): Promise<KeycloakGroupRepresentation> {
+    const response = await api.put<KeycloakGroupRepresentation>(
+      KEYCLOAK_ADMIN_ENDPOINTS.GROUP_BY_ID(id),
+      payload,
+    );
+    return response.data;
+  },
+
+  async deleteGroup(id: string): Promise<void> {
+    await api.delete<void>(KEYCLOAK_ADMIN_ENDPOINTS.GROUP_BY_ID(id));
+  },
+
   async getGroupMembers(
     id: string,
     params?: { first?: number; max?: number },
@@ -169,4 +164,3 @@ export const keycloakAdminService = {
     return response.data;
   },
 };
-

@@ -16,6 +16,15 @@ export interface KeycloakPaginatedUsers {
   max: number;
 }
 
+export interface CreateKeycloakGroupPayload {
+  name: string;
+  parentId?: string;
+}
+
+export interface UpdateKeycloakGroupPayload {
+  name: string;
+}
+
 export interface KeycloakRoleRepresentation {
   id: string;
   name: string;
@@ -68,4 +77,3 @@ export interface QueryKeycloakGroupsParams {
   first?: number;
   max?: number;
 }
-
