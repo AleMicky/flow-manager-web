@@ -6,4 +6,5 @@ export * from "./components/UserDetailDrawer";
 export * from "./components/RoleUsersDrawer";
 export * from "./components/GroupDetailDrawer";
 export * from "./components/GroupFormModal";
+export * from "./components/BpmnTaskAssignmentsTab";
 export * from "./pages/KeycloakAdminPage";

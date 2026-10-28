@@ -1,7 +1,7 @@
 export const KEYCLOAK_ADMIN_ENDPOINTS = {
-  /** Listar, buscar y crear usuarios */
+  /** Listar y buscar usuarios */
   USERS: "/keycloak-admin/users",
-  /** Detalle, edición y eliminación de un usuario por ID */
+  /** Detalle de un usuario por ID */
   USER_BY_ID: (id: string) =>
     `/keycloak-admin/users/${encodeURIComponent(id)}`,
   /** Roles asignados a un usuario */
@@ -35,6 +35,13 @@ export const KEYCLOAK_ADMIN_ENDPOINTS = {
   /** Asignar o quitar un miembro de un grupo */
   GROUP_MEMBER_BY_USER: (groupId: string, userId: string) =>
     `/keycloak-admin/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`,
+
+  /** Asignaciones de grupos/usuarios de Keycloak a userTasks de Flowable */
+  TASK_ASSIGNMENTS: "/workflow/task-assignments",
+  TASK_ASSIGNMENTS_BY_PROCESS: (processDefinitionKey: string) =>
+    `/workflow/task-assignments/process/${encodeURIComponent(processDefinitionKey)}`,
+  TASK_ASSIGNMENT_BY_ID: (id: string) =>
+    `/workflow/task-assignments/${encodeURIComponent(id)}`,
 } as const;
 
 export const KEYCLOAK_ADMIN_QUERY_KEYS = {
@@ -77,5 +84,12 @@ export const KEYCLOAK_ADMIN_QUERY_KEYS = {
       "group-members",
       id,
       params ?? {},
+    ] as const,
+
+  processTaskAssignments: (processDefinitionKey: string) =>
+    [
+      ...KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      "process-task-assignments",
+      processDefinitionKey,
     ] as const,
 } as const;

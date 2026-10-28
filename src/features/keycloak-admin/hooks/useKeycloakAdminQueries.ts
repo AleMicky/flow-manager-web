@@ -7,6 +7,7 @@ import type {
   QueryKeycloakRolesParams,
   QueryKeycloakUsersParams,
   UpdateKeycloakGroupPayload,
+  UpsertTaskAssignmentPayload,
 } from "../types/keycloak-admin.types";
 
 // ==========================================
@@ -232,6 +233,40 @@ export function useDeleteKeycloakGroupMutation() {
 
   return useMutation({
     mutationFn: (id: string) => keycloakAdminService.deleteGroup(id),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
+// ==========================================
+// ASIGNACIÓN DE TAREAS BPMN (FLOWABLE <-> KEYCLOAK)
+// ==========================================
+
+export function useProcessTaskAssignmentsQuery(
+  processDefinitionKey?: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.processTaskAssignments(
+      processDefinitionKey ?? "",
+    ),
+    queryFn: () =>
+      keycloakAdminService.getProcessTaskAssignments(processDefinitionKey!),
+    enabled: Boolean(processDefinitionKey) && enabled,
+    staleTime: 15_000,
+    retry: false,
+  });
+}
+
+export function useUpsertTaskAssignmentMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: UpsertTaskAssignmentPayload) =>
+      keycloakAdminService.upsertTaskAssignment(payload),
     onSuccess: () => {
       void queryClient.invalidateQueries({
         queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,

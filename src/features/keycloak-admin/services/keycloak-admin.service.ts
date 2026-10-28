@@ -1,6 +1,7 @@
 import { api } from "../../../services/api";
 import { KEYCLOAK_ADMIN_ENDPOINTS } from "../constants/keycloak-admin.endpoints";
 import type {
+  BpmnUserTaskAssignmentView,
   CreateKeycloakGroupPayload,
   KeycloakAdminUser,
   KeycloakCandidateRole,
@@ -12,6 +13,7 @@ import type {
   QueryKeycloakRolesParams,
   QueryKeycloakUsersParams,
   UpdateKeycloakGroupPayload,
+  UpsertTaskAssignmentPayload,
 } from "../types/keycloak-admin.types";
 
 export const keycloakAdminService = {
@@ -160,6 +162,31 @@ export const keycloakAdminService = {
     const response = await api.get<KeycloakAdminUser[]>(
       KEYCLOAK_ADMIN_ENDPOINTS.GROUP_MEMBERS(id),
       { params },
+    );
+    return response.data;
+  },
+
+  // ==========================================
+  // ASIGNACIÓN DE TAREAS BPMN (FLOWABLE <-> KEYCLOAK)
+  // ==========================================
+
+  async getProcessTaskAssignments(
+    processDefinitionKey: string,
+  ): Promise<BpmnUserTaskAssignmentView[]> {
+    const response = await api.get<BpmnUserTaskAssignmentView[]>(
+      KEYCLOAK_ADMIN_ENDPOINTS.TASK_ASSIGNMENTS_BY_PROCESS(
+        processDefinitionKey,
+      ),
+    );
+    return response.data;
+  },
+
+  async upsertTaskAssignment(
+    payload: UpsertTaskAssignmentPayload,
+  ): Promise<unknown> {
+    const response = await api.put(
+      KEYCLOAK_ADMIN_ENDPOINTS.TASK_ASSIGNMENTS,
+      payload,
     );
     return response.data;
   },

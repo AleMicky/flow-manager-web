@@ -57,6 +57,25 @@ export interface KeycloakGroupRepresentation {
   attributes?: Record<string, string[]>;
 }
 
+export interface BpmnUserTaskAssignmentView {
+  taskDefinitionKey: string;
+  taskName: string;
+  processDefinitionKey: string;
+  assignmentId: string | null;
+  candidateGroups: string[];
+  candidateUsers: string[];
+  active: boolean;
+}
+
+export interface UpsertTaskAssignmentPayload {
+  processDefinitionKey: string;
+  taskDefinitionKey: string;
+  taskName?: string;
+  candidateGroups?: string[];
+  candidateUsers?: string[];
+  active?: boolean;
+}
+
 export interface QueryKeycloakUsersParams {
   search?: string;
   username?: string;

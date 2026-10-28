@@ -1,4 +1,5 @@
 import {
+  ApartmentOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -29,6 +30,7 @@ import {
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useState } from "react";
+import { BpmnTaskAssignmentsTab } from "../components/BpmnTaskAssignmentsTab";
 import { GroupDetailDrawer } from "../components/GroupDetailDrawer";
 import { GroupFormModal } from "../components/GroupFormModal";
 import { RoleUsersDrawer } from "../components/RoleUsersDrawer";
@@ -50,7 +52,7 @@ import type {
 
 const { Title, Paragraph, Text } = Typography;
 
-type ActiveTab = "users" | "roles" | "groups";
+type ActiveTab = "users" | "groups" | "bpmn-assignments" | "roles";
 type RoleScope = "candidates" | "client" | "realm";
 
 interface UnifiedRoleRow {
@@ -739,6 +741,16 @@ export function KeycloakAdminPage() {
                   />
                 </div>
               ),
+            },
+            {
+              key: "bpmn-assignments",
+              label: (
+                <Space>
+                  <ApartmentOutlined />
+                  <span>Asignación a Tareas BPMN (Flowable)</span>
+                </Space>
+              ),
+              children: <BpmnTaskAssignmentsTab />,
             },
           ]}
         />
