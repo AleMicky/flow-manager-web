@@ -1,3 +1,5 @@
+import type { DynamicJsonSchema } from "../../tasks/types/tasks.types";
+
 export interface ProcessInstance {
   id: string;
   url: string;
@@ -8,6 +10,18 @@ export interface ProcessInstance {
   processDefinitionUrl: string;
   activityId: string | null;
   tenantId: string;
+}
+
+export interface HistoricTaskItem {
+  id: string;
+  name: string;
+  taskDefinitionKey: string | null;
+  processInstanceId: string;
+  assignee: string | null;
+  startTime: string;
+  endTime: string | null;
+  durationInMillis: number | null;
+  deleteReason?: string | null;
 }
 
 export interface FlowablePage<T> {
@@ -30,4 +44,16 @@ export interface StartProcessPayload {
   processDefinitionKey: string;
   businessKey?: string;
   variables?: Record<string, unknown>;
+}
+
+export interface WorkflowProcessMetadata {
+  id: string;
+  key: string;
+  name: string;
+  description: string | null;
+  processDefinitionKey: string;
+  codePrefix?: string;
+  correlativeFormat?: string;
+  startFormSchema: DynamicJsonSchema;
+  active: boolean;
 }

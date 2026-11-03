@@ -30,6 +30,53 @@ export function useInstanceDetailQuery(id?: string, enabled = true) {
 }
 
 /**
+ * Hook para obtener la URL local del diagrama BPMN con actividades activas.
+ */
+export function useInstanceDiagramQuery(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: INSTANCES_QUERY_KEYS.diagram(id ?? ""),
+    queryFn: () => instancesService.getInstanceDiagram(id!),
+    enabled: Boolean(id) && enabled,
+    staleTime: 10_000,
+  });
+}
+
+/**
+ * Hook para consultar las variables acumuladas de una instancia.
+ */
+export function useInstanceVariablesQuery(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: INSTANCES_QUERY_KEYS.variables(id ?? ""),
+    queryFn: () => instancesService.getInstanceVariables(id!),
+    enabled: Boolean(id) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * Hook para consultar el historial de tareas de una instancia.
+ */
+export function useInstanceHistoricTasksQuery(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: INSTANCES_QUERY_KEYS.historyTasks(id ?? ""),
+    queryFn: () => instancesService.getInstanceHistoricTasks(id!),
+    enabled: Boolean(id) && enabled,
+    staleTime: 15_000,
+  });
+}
+
+/**
+ * Hook para consultar los procesos con formularios de inicio configurados.
+ */
+export function useAvailableProcessesQuery() {
+  return useQuery({
+    queryKey: INSTANCES_QUERY_KEYS.availableProcesses(),
+    queryFn: () => instancesService.getAvailableProcesses(),
+    staleTime: 60_000,
+  });
+}
+
+/**
  * Mutación para iniciar un nuevo proceso BPMN.
  */
 export function useStartProcessMutation() {

@@ -18,7 +18,11 @@ import {
   Typography,
 } from "antd";
 import dayjs from "dayjs";
-import { useTaskDetailQuery } from "../hooks/useTasksQueries";
+import {
+  useTaskDetailQuery,
+  useTaskVariablesQuery,
+} from "../hooks/useTasksQueries";
+import { TaskAntecedentsViewer } from "./TaskAntecedentsViewer";
 
 const { Text } = Typography;
 
@@ -46,6 +50,11 @@ export function TaskDetailDrawer({
     open && Boolean(taskId),
   );
 
+  const { data: variables } = useTaskVariablesQuery(
+    taskId ?? undefined,
+    open && Boolean(taskId),
+  );
+
   return (
     <Drawer
       title={
@@ -56,7 +65,7 @@ export function TaskDetailDrawer({
         </Space>
       }
       placement="right"
-      size={560}
+      size={640}
       open={open}
       onClose={onClose}
       extra={
@@ -124,86 +133,97 @@ export function TaskDetailDrawer({
       )}
 
       {data && (
-        <Descriptions
-          bordered
-          size="small"
-          column={1}
-          title={data.name || "Tarea sin nombre"}
-        >
-          <Descriptions.Item label="ID de Tarea">
-            <Text copyable>{data.id}</Text>
-          </Descriptions.Item>
+        <Space direction="vertical" size="large" style={{ width: "100%" }}>
+          <Descriptions
+            bordered
+            size="small"
+            column={1}
+            title={data.name || "Tarea sin nombre"}
+          >
+            <Descriptions.Item label="ID de Tarea">
+              <Text copyable>{data.id}</Text>
+            </Descriptions.Item>
 
-          <Descriptions.Item label="Descripción">
-            {data.description ? (
-              <Text>{data.description}</Text>
-            ) : (
-              <Text type="secondary">Sin descripción</Text>
-            )}
-          </Descriptions.Item>
+            <Descriptions.Item label="Descripción">
+              {data.description ? (
+                <Text>{data.description}</Text>
+              ) : (
+                <Text type="secondary">Sin descripción</Text>
+              )}
+            </Descriptions.Item>
 
-          <Descriptions.Item label="Asignado a">
-            {data.assignee ? (
+            <Descriptions.Item label="Asignado a">
+              {data.assignee ? (
+                <Space>
+                  <UserOutlined style={{ color: "#3b82f6" }} />
+                  <Text strong>{data.assignee}</Text>
+                </Space>
+              ) : (
+                <Badge
+                  status="warning"
+                  text="Sin asignar (Disponible para reclamar)"
+                />
+              )}
+            </Descriptions.Item>
+
+            <Descriptions.Item label="Prioridad">
+              {data.priority > 50 ? (
+                <Tag color="red">Alta ({data.priority})</Tag>
+              ) : data.priority === 50 ? (
+                <Tag color="orange">Normal ({data.priority})</Tag>
+              ) : (
+                <Tag color="blue">Baja ({data.priority})</Tag>
+              )}
+            </Descriptions.Item>
+
+            <Descriptions.Item label="Fecha de Creación">
               <Space>
-                <UserOutlined style={{ color: "#3b82f6" }} />
-                <Text strong>{data.assignee}</Text>
+                <ClockCircleOutlined style={{ color: "#94a3b8" }} />
+                <Text>
+                  {dayjs(data.createTime).format("DD/MM/YYYY HH:mm:ss")}
+                </Text>
               </Space>
-            ) : (
-              <Badge status="warning" text="Sin asignar (Disponible para reclamar)" />
-            )}
-          </Descriptions.Item>
+            </Descriptions.Item>
 
-          <Descriptions.Item label="Prioridad">
-            {data.priority > 50 ? (
-              <Tag color="red">Alta ({data.priority})</Tag>
-            ) : data.priority === 50 ? (
-              <Tag color="orange">Normal ({data.priority})</Tag>
-            ) : (
-              <Tag color="blue">Baja ({data.priority})</Tag>
-            )}
-          </Descriptions.Item>
+            <Descriptions.Item label="Fecha Límite (Due Date)">
+              {data.dueDate ? (
+                <Text>{dayjs(data.dueDate).format("DD/MM/YYYY HH:mm:ss")}</Text>
+              ) : (
+                <Text type="secondary">—</Text>
+              )}
+            </Descriptions.Item>
 
-          <Descriptions.Item label="Fecha de Creación">
-            <Space>
-              <ClockCircleOutlined style={{ color: "#94a3b8" }} />
-              <Text>
-                {dayjs(data.createTime).format("DD/MM/YYYY HH:mm:ss")}
-              </Text>
-            </Space>
-          </Descriptions.Item>
+            <Descriptions.Item label="ID de Instancia de Proceso">
+              {data.processInstanceId ? (
+                <Text copyable>{data.processInstanceId}</Text>
+              ) : (
+                <Text type="secondary">—</Text>
+              )}
+            </Descriptions.Item>
 
-          <Descriptions.Item label="Fecha Límite (Due Date)">
-            {data.dueDate ? (
-              <Text>{dayjs(data.dueDate).format("DD/MM/YYYY HH:mm:ss")}</Text>
-            ) : (
-              <Text type="secondary">—</Text>
-            )}
-          </Descriptions.Item>
+            <Descriptions.Item label="ID de Definición de Proceso">
+              {data.processDefinitionId ? (
+                <Text copyable>{data.processDefinitionId}</Text>
+              ) : (
+                <Text type="secondary">—</Text>
+              )}
+            </Descriptions.Item>
 
-          <Descriptions.Item label="ID de Instancia de Proceso">
-            {data.processInstanceId ? (
-              <Text copyable>{data.processInstanceId}</Text>
-            ) : (
-              <Text type="secondary">—</Text>
-            )}
-          </Descriptions.Item>
+            <Descriptions.Item label="Clave de Tarea (Task Definition Key)">
+              {data.taskDefinitionKey ? (
+                <Tag color="geekblue">{data.taskDefinitionKey}</Tag>
+              ) : (
+                <Text type="secondary">—</Text>
+              )}
+            </Descriptions.Item>
+          </Descriptions>
 
-          <Descriptions.Item label="ID de Definición de Proceso">
-            {data.processDefinitionId ? (
-              <Text copyable>{data.processDefinitionId}</Text>
-            ) : (
-              <Text type="secondary">—</Text>
-            )}
-          </Descriptions.Item>
-
-          <Descriptions.Item label="Clave de Tarea (Task Definition Key)">
-            {data.taskDefinitionKey ? (
-              <Tag color="geekblue">{data.taskDefinitionKey}</Tag>
-            ) : (
-              <Text type="secondary">—</Text>
-            )}
-          </Descriptions.Item>
-        </Descriptions>
+          {/* Antecedentes, variables previas y documentos adjuntos */}
+          <TaskAntecedentsViewer
+            variables={variables}
+            defaultExpanded={true}
+          />
+        </Space>
       )}
 
       {!isLoading && !data && !isError && (

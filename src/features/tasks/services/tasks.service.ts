@@ -4,6 +4,7 @@ import type {
   CompleteTaskPayload,
   FlowablePage,
   QueryTasksParams,
+  WorkflowFormDto,
   WorkflowTask,
 } from "../types/tasks.types";
 
@@ -46,6 +47,21 @@ export const tasksService = {
   },
 
   /**
+   * Obtiene las variables y documentos antecedentes de una tarea.
+   * Endpoint: GET /api/workflow/tasks/:id/variables
+   */
+  async getVariables(id: string): Promise<Record<string, unknown>> {
+    try {
+      const response = await api.get<Record<string, unknown>>(
+        TASKS_ENDPOINTS.VARIABLES(id),
+      );
+      return response.data;
+    } catch {
+      return {};
+    }
+  },
+
+  /**
    * Reclama una tarea para el usuario autenticado.
    * Endpoint: POST /api/workflow/tasks/:id/claim
    */
@@ -71,5 +87,18 @@ export const tasksService = {
     payload?: CompleteTaskPayload,
   ): Promise<void> {
     await api.post<void>(TASKS_ENDPOINTS.COMPLETE(id), payload ?? {});
+  },
+
+  /**
+   * Obtiene el formulario dinámico asignado a la tarea (si existe).
+   * Endpoint: GET /api/workflow/forms/task/:taskId
+   */
+  async getForm(taskId: string): Promise<WorkflowFormDto | null> {
+    try {
+      const response = await api.get<WorkflowFormDto>(TASKS_ENDPOINTS.FORM(taskId));
+      return response.data;
+    } catch {
+      return null;
+    }
   },
 };

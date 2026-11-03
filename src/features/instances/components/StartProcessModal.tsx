@@ -1,45 +1,50 @@
 import {
+  CodeOutlined,
+  FormOutlined,
+  NumberOutlined,
   PlayCircleOutlined,
-  ThunderboltOutlined,
 } from "@ant-design/icons";
 import {
   Alert,
   Button,
+  Divider,
   Form,
   Input,
   Modal,
   Select,
   Space,
+  Tag,
   Typography,
   message,
 } from "antd";
+import type { AxiosError } from "axios";
 import { useEffect, useState } from "react";
 import { useDefinitionsQuery } from "../../definitions/hooks/useDefinitionsQueries";
-import { useStartProcessMutation } from "../hooks/useInstancesQueries";
-import type { StartProcessPayload } from "../types/instances.types";
+import {
+  useAvailableProcessesQuery,
+  useStartProcessMutation,
+} from "../hooks/useInstancesQueries";
+import { DynamicFormRenderer } from "../../tasks/components/DynamicFormRenderer";
 
-const { Paragraph } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 interface StartProcessModalProps {
   open: boolean;
-  initialProcessKey?: string;
   onClose: () => void;
+  initialProcessKey?: string;
+  defaultProcessKey?: string;
   onSuccess?: () => void;
-}
-
-interface FormValues {
-  processDefinitionKey: string;
-  businessKey?: string;
-  variablesText?: string;
 }
 
 const SAMPLE_VARIABLES = JSON.stringify(
   {
-    solicitante: "Usuario Demo",
-    concepto: "Adquisición de equipamiento informático",
-    monto: 3500,
-    prioridad: "alta",
+    objetoContratacion: "Adquisición de repuestos para turbina de gas",
+    categoria: "CATEGORIA_I",
+    montoEstimadoBs: 85000,
+    tipoAdquisicion: "BIEN",
+    adjuntoET_TDR: "ET_Repuestos_Turbina.pdf",
+    adjuntoCotizacion: "Cotizacion_Referencial.pdf",
   },
   null,
   2,
@@ -47,63 +52,117 @@ const SAMPLE_VARIABLES = JSON.stringify(
 
 export function StartProcessModal({
   open,
-  initialProcessKey,
   onClose,
+  initialProcessKey,
+  defaultProcessKey,
   onSuccess,
 }: StartProcessModalProps) {
-  const [form] = Form.useForm<FormValues>();
+  const [form] = Form.useForm();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const startMutation = useStartProcessMutation();
+  const effectiveProcessKey = initialProcessKey ?? defaultProcessKey ?? null;
+  const [selectedProcessKey, setSelectedProcessKey] = useState<string | null>(
+    effectiveProcessKey,
+  );
+  const [showJsonMode, setShowJsonMode] = useState<boolean>(false);
+
+  // Consulta de definiciones desde Flowable
   const { data: definitionsData, isLoading: loadingDefinitions } =
     useDefinitionsQuery({ size: 100 });
 
+  // Consulta de procesos con esquema configurado en BD
+  const { data: availableProcesses, isLoading: loadingAvailable } =
+    useAvailableProcessesQuery();
+
+  const startMutation = useStartProcessMutation();
+
+  // Buscar si el proceso seleccionado tiene startFormSchema configurado
+  const configuredProcess = availableProcesses?.find(
+    (p) =>
+      p.processDefinitionKey === selectedProcessKey ||
+      p.key === selectedProcessKey,
+  );
+
+  const hasStartForm = Boolean(
+    configuredProcess?.startFormSchema &&
+      configuredProcess.startFormSchema.properties &&
+      Object.keys(configuredProcess.startFormSchema.properties).length > 0,
+  );
+
   useEffect(() => {
     if (open) {
-      form.setFieldsValue({
-        processDefinitionKey: initialProcessKey ?? "",
-        businessKey: `SOL-${Date.now().toString().slice(-6)}`,
-        variablesText: "",
-      });
+      setErrorMessage(null);
+      form.resetFields();
+      if (effectiveProcessKey) {
+        setSelectedProcessKey(effectiveProcessKey);
+        form.setFieldValue("processDefinitionKey", effectiveProcessKey);
+      }
+      setShowJsonMode(false);
     }
-  }, [open, initialProcessKey, form]);
+  }, [open, effectiveProcessKey, form]);
 
-  const handleFinish = async (values: FormValues) => {
+  const handleFinish = async (values: Record<string, unknown>) => {
     setErrorMessage(null);
 
-    let parsedVariables: Record<string, unknown> | undefined = undefined;
-    if (values.variablesText?.trim()) {
-      try {
-        parsedVariables = JSON.parse(values.variablesText);
-        if (typeof parsedVariables !== "object" || parsedVariables === null) {
-          throw new Error("Las variables deben ser un objeto JSON válido");
+    const processDefinitionKey = values.processDefinitionKey as string;
+
+    let parsedVariables: Record<string, unknown> = {};
+
+    if (showJsonMode || !hasStartForm) {
+      // Modo JSON crudo
+      const rawText = (values.variablesText as string)?.trim();
+      if (rawText) {
+        try {
+          const parsed = JSON.parse(rawText);
+          if (typeof parsed !== "object" || parsed === null) {
+            throw new Error("Las variables deben ser un objeto JSON válido");
+          }
+          parsedVariables = parsed;
+        } catch (err) {
+          setErrorMessage(
+            `Formato de variables JSON inválido: ${err instanceof Error ? err.message : String(err)}`,
+          );
+          return;
         }
-      } catch (err) {
-        setErrorMessage(
-          `Formato de variables JSON inválido: ${err instanceof Error ? err.message : String(err)}`,
-        );
-        return;
       }
+    } else {
+      // Modo formulario dinámico: extraer todos los campos excepto los del sistema
+      const {
+        processDefinitionKey: _k,
+        variablesText: _vt,
+        ...dynamicFields
+      } = values;
+      parsedVariables = dynamicFields;
     }
 
     try {
-      const payload: StartProcessPayload = {
-        processDefinitionKey: values.processDefinitionKey.trim(),
-        businessKey: values.businessKey?.trim() || undefined,
-        variables: parsedVariables,
-      };
+      await startMutation.mutateAsync({
+        processDefinitionKey,
+        variables: Object.keys(parsedVariables).length > 0 ? parsedVariables : undefined,
+      });
 
-      const result = await startMutation.mutateAsync(payload);
-      message.success(`Instancia iniciada correctamente (ID: ${result.id})`);
-      form.resetFields();
+      message.success(
+        `Proceso "${processDefinitionKey}" iniciado exitosamente`,
+      );
       onSuccess?.();
       onClose();
-    } catch (err: unknown) {
-      const axErr = err as {
-        response?: { data?: { message?: string | string[] } };
-        message?: string;
-      };
-      const apiMsg = axErr.response?.data?.message;
+    } catch (err) {
+      const axErr = err as AxiosError<{
+        message?: string | string[];
+        statusCode?: number;
+        errors?: Array<{ path: string; message: string }>;
+      }>;
+      const respData = axErr.response?.data;
+
+      if (respData?.errors && Array.isArray(respData.errors)) {
+        const errorList = respData.errors
+          .map((e) => `• Campo "${e.path}": ${e.message}`)
+          .join("\n");
+        setErrorMessage(`Validación de formulario:\n${errorList}`);
+        return;
+      }
+
+      const apiMsg = respData?.message;
       const formatted = Array.isArray(apiMsg)
         ? apiMsg.join(" | ")
         : apiMsg || axErr.message || "Error al iniciar el proceso BPMN";
@@ -116,11 +175,39 @@ export function StartProcessModal({
     message.info("Variables de ejemplo cargadas");
   };
 
-  const definitionOptions =
-    definitionsData?.data?.map((def) => ({
-      value: def.key,
-      label: `${def.name || def.key} (v${def.version}) [key: ${def.key}]`,
-    })) ?? [];
+  // Opciones combinadas de Flowable y procesos configurados
+  const combinedOptionsMap = new Map<string, { value: string; label: string }>();
+
+  // Procesos configurados en BD
+  availableProcesses?.forEach((proc) => {
+    combinedOptionsMap.set(proc.processDefinitionKey, {
+      value: proc.processDefinitionKey,
+      label: `${proc.name} [${proc.processDefinitionKey}] (Formulario Activo)`,
+    });
+  });
+
+  // Procesos desplegados en Flowable
+  definitionsData?.data?.forEach((def) => {
+    if (!combinedOptionsMap.has(def.key)) {
+      combinedOptionsMap.set(def.key, {
+        value: def.key,
+        label: `${def.name || def.key} (v${def.version}) [key: ${def.key}]`,
+      });
+    }
+  });
+
+  const definitionOptions = Array.from(combinedOptionsMap.values());
+
+  const prefix = configuredProcess?.codePrefix || "ADQ";
+  const currentYear = new Date().getFullYear();
+  const formatPattern =
+    configuredProcess?.correlativeFormat || "{prefix}-{number:3}/{year}";
+  const previewCorrelative = formatPattern
+    .replace("{prefix}", prefix)
+    .replace("{year}", String(currentYear))
+    .replace(/\{number(?::(\d+))?\}/g, (_m, p) =>
+      "1".padStart(p ? parseInt(p, 10) : 3, "0"),
+    );
 
   return (
     <Modal
@@ -128,35 +215,51 @@ export function StartProcessModal({
         <Space>
           <PlayCircleOutlined style={{ color: "#10b981" }} />
           <span>Iniciar Proceso BPMN</span>
+          {hasStartForm && !showJsonMode && (
+            <Tag color="blue" icon={<FormOutlined />}>
+              Formulario de Inicio Dinámico
+            </Tag>
+          )}
         </Space>
       }
       open={open}
-      onCancel={() => {
-        setErrorMessage(null);
-        onClose();
-      }}
-      width={680}
-      footer={null}
-      destroyOnHidden
+      onOk={() => form.submit()}
+      onCancel={onClose}
+      okText="Iniciar Ejecución"
+      cancelText="Cancelar"
+      confirmLoading={startMutation.isPending}
+      destroyOnClose
+      width={720}
     >
-      <Paragraph type="secondary" style={{ marginBottom: 16 }}>
-        Crea y arranca una nueva instancia de flujo de trabajo ejecutable en Flowable.
-      </Paragraph>
-
       {errorMessage && (
         <Alert
           type="error"
-          showIcon
-          title="Error al iniciar instancia"
-          message="Error al iniciar instancia"
-          description={errorMessage}
+          message="Error de validación o ejecución"
+          description={
+            <pre
+              style={{
+                margin: 0,
+                fontSize: 12,
+                whiteSpace: "pre-wrap",
+                fontFamily: "inherit",
+              }}
+            >
+              {errorMessage}
+            </pre>
+          }
           style={{ marginBottom: 16 }}
-          closable
-          onClose={() => setErrorMessage(null)}
+          showIcon
         />
       )}
 
-      <Form form={form} layout="vertical" onFinish={handleFinish}>
+      <Form
+        form={form}
+        layout="vertical"
+        onFinish={handleFinish}
+        initialValues={{
+          processDefinitionKey: effectiveProcessKey,
+        }}
+      >
         <Form.Item
           label="Definición de Proceso (Process Definition Key)"
           name="processDefinitionKey"
@@ -171,69 +274,119 @@ export function StartProcessModal({
           <Select
             showSearch
             placeholder="Selecciona o escribe la clave del proceso..."
-            loading={loadingDefinitions}
+            loading={loadingDefinitions || loadingAvailable}
             options={definitionOptions}
+            onChange={(val) => {
+              setSelectedProcessKey(val);
+              setErrorMessage(null);
+            }}
             filterOption={(input, option) =>
               (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
             }
           />
         </Form.Item>
 
-        <Form.Item
-          label="Clave de Negocio (Business Key)"
-          name="businessKey"
-          tooltip="Identificador de correlación del negocio (ej. código de solicitud o folio de compra)."
+        {/* Indicador de Correlativo Oficial 100% Automático */}
+        <div
+          style={{
+            marginBottom: 20,
+            padding: "10px 14px",
+            background: "#f0fdf4",
+            border: "1px solid #bbf7d0",
+            borderRadius: 6,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
         >
-          <Input placeholder="Ej: SOL-2026-001" allowClear />
-        </Form.Item>
+          <Space>
+            <NumberOutlined style={{ color: "#16a34a" }} />
+            <Text strong style={{ color: "#15803d" }}>
+              Correlativo Oficial:
+            </Text>
+            <Text type="secondary">
+              Se generará y asignará automáticamente por el sistema
+            </Text>
+          </Space>
+          <Tag color="green" style={{ margin: 0, fontWeight: 700 }}>
+            {previewCorrelative}
+          </Tag>
+        </div>
 
-        <Form.Item
-          label={
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                width: "100%",
-                alignItems: "center",
-              }}
-            >
-              <span>Variables Iniciales (JSON)</span>
+        {hasStartForm && !showJsonMode ? (
+          <>
+            {configuredProcess?.description && (
+              <Alert
+                type="info"
+                message={configuredProcess.name}
+                description={configuredProcess.description}
+                style={{ marginBottom: 16 }}
+                showIcon
+              />
+            )}
+
+            <DynamicFormRenderer schema={configuredProcess!.startFormSchema} />
+
+            <Divider style={{ margin: "16px 0" }} />
+            <div style={{ textAlign: "right", marginBottom: 16 }}>
               <Button
                 type="link"
                 size="small"
-                icon={<ThunderboltOutlined />}
-                onClick={handleLoadSample}
+                icon={<CodeOutlined />}
+                onClick={() => setShowJsonMode(true)}
               >
-                Cargar JSON de ejemplo
+                Cambiar a entrada JSON avanzada
               </Button>
             </div>
-          }
-          name="variablesText"
-          tooltip="Objeto JSON con variables que alimentarán el inicio del proceso."
-        >
-          <TextArea
-            rows={6}
-            placeholder={`{\n  "solicitante": "Juan Pérez",\n  "monto": 1500\n}`}
-            style={{
-              fontFamily: "monospace",
-              fontSize: 12,
-            }}
-          />
-        </Form.Item>
+          </>
+        ) : (
+          <>
+            {hasStartForm && showJsonMode && (
+              <div style={{ textAlign: "right", marginBottom: 8 }}>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<FormOutlined />}
+                  onClick={() => setShowJsonMode(false)}
+                >
+                  Volver al Formulario Visual
+                </Button>
+              </div>
+            )}
 
-        <Form.Item style={{ marginBottom: 0, textAlign: "right" }}>
-          <Space>
-            <Button onClick={onClose}>Cancelar</Button>
-            <Button
-              type="primary"
-              htmlType="submit"
-              loading={startMutation.isPending}
-              icon={<PlayCircleOutlined />}
+            <Form.Item
+              label={
+                <Space style={{ width: "100%", justifyContent: "space-between" }}>
+                  <span>Variables Iniciales del Proceso (JSON)</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={handleLoadSample}
+                    style={{ padding: 0 }}
+                  >
+                    Cargar variables de ejemplo
+                  </Button>
+                </Space>
+              }
+              name="variablesText"
+              tooltip="Parámetros iniciales en formato JSON clave-valor requeridos por el proceso."
             >
-              Iniciar Proceso
-            </Button>
-          </Space>
-        </Form.Item>
+              <TextArea
+                rows={9}
+                placeholder={SAMPLE_VARIABLES}
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  fontSize: 12,
+                }}
+              />
+            </Form.Item>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Las variables configuradas estarán disponibles para compuertas de decisión,
+              asignación de tareas y formularios subsiguientes.
+            </Text>
+          </>
+        )}
       </Form>
     </Modal>
   );

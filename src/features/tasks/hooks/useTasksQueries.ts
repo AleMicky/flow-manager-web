@@ -41,6 +41,30 @@ export function useTaskDetailQuery(id?: string, enabled = true) {
 }
 
 /**
+ * Hook para consultar las variables y documentos antecedentes de una tarea.
+ */
+export function useTaskVariablesQuery(id?: string, enabled = true) {
+  return useQuery({
+    queryKey: TASKS_QUERY_KEYS.variables(id ?? ""),
+    queryFn: () => tasksService.getVariables(id!),
+    enabled: Boolean(id) && enabled,
+    staleTime: 10_000,
+  });
+}
+
+/**
+ * Hook para consultar el formulario dinámico asignado a una tarea.
+ */
+export function useTaskFormQuery(taskId?: string, enabled = true) {
+  return useQuery({
+    queryKey: TASKS_QUERY_KEYS.form(taskId ?? ""),
+    queryFn: () => tasksService.getForm(taskId!),
+    enabled: Boolean(taskId) && enabled,
+    staleTime: 60_000,
+  });
+}
+
+/**
  * Mutación para reclamar una tarea.
  */
 export function useClaimTaskMutation() {
