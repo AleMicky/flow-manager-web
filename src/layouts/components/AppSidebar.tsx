@@ -1,11 +1,11 @@
 import {
     ApartmentOutlined,
     AppstoreOutlined,
+    CheckCircleOutlined,
     CheckSquareOutlined,
     FileTextOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
-    NodeIndexOutlined,
     QuestionCircleOutlined,
     SafetyCertificateOutlined,
     SettingOutlined,
@@ -81,14 +81,9 @@ export function AppSidebar({
                 {
                     key: "/solicitudes",
                     icon: <FileTextOutlined />,
-                    label: "Solicitudes",
-                },
-                {
-                    key: "/instancias",
-                    icon: <NodeIndexOutlined />,
                     label: (
                         <div className="fm-menu-badge-item">
-                            <span>Instancias</span>
+                            <span>Solicitudes</span>
                             {activeInstancesCount > 0 && (
                                 <Badge
                                     count={activeInstancesCount}
@@ -117,15 +112,17 @@ export function AppSidebar({
                 },
                 {
                     key: "/aprobaciones",
-                    icon: <ApartmentOutlined />,
+                    icon: <CheckCircleOutlined />,
                     label: (
                         <div className="fm-menu-badge-item">
                             <span>Aprobaciones</span>
-                            <Badge
-                                count={2}
-                                size="small"
-                                className="fm-nav-badge fm-nav-badge--amber"
-                            />
+                            {myTasksCount > 0 && (
+                                <Badge
+                                    count={myTasksCount}
+                                    size="small"
+                                    className="fm-nav-badge fm-nav-badge--amber"
+                                />
+                            )}
                         </div>
                     ),
                 },

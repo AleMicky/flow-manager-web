@@ -1,11 +1,11 @@
 import {
-  ApartmentOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   FileSearchOutlined,
   FileTextOutlined,
   HistoryOutlined,
   InfoCircleOutlined,
+  PauseCircleOutlined,
   PictureOutlined,
   ReloadOutlined,
   SyncOutlined,
@@ -13,9 +13,9 @@ import {
 } from "@ant-design/icons";
 import {
   Alert,
-  Badge,
   Button,
   Card,
+  Collapse,
   Descriptions,
   Drawer,
   Empty,
@@ -28,13 +28,19 @@ import {
   Typography,
 } from "antd";
 import dayjs from "dayjs";
+import { useDefinitionsQuery } from "../../definitions/hooks/useDefinitionsQueries";
 import {
+  useAvailableProcessesQuery,
   useInstanceDetailQuery,
   useInstanceDiagramQuery,
   useInstanceHistoricTasksQuery,
   useInstanceVariablesQuery,
 } from "../hooks/useInstancesQueries";
 import { TaskAntecedentsViewer } from "../../tasks/components/TaskAntecedentsViewer";
+import {
+  formatActivityName,
+  getProcessFriendlyName,
+} from "../utils/instanceFormatters";
 
 const { Text } = Typography;
 
@@ -49,6 +55,9 @@ export function InstanceDetailDrawer({
   instanceId,
   onClose,
 }: InstanceDetailDrawerProps) {
+  const { data: availableProcesses } = useAvailableProcessesQuery();
+  const { data: definitionsData } = useDefinitionsQuery({ size: 100 });
+
   const { data, isLoading, isError, error } = useInstanceDetailQuery(
     instanceId ?? undefined,
     open && Boolean(instanceId),
@@ -79,110 +88,205 @@ export function InstanceDetailDrawer({
     open && Boolean(instanceId),
   );
 
-  return (
-    <Drawer
-      title={
-        <Space>
-          <InfoCircleOutlined style={{ color: "#3b82f6" }} />
-          <span>Detalle de Instancia</span>
-          {instanceId && (
-            <Text type="secondary" copyable={{ text: instanceId }}>
-              {instanceId}
-            </Text>
-          )}
-        </Space>
-      }
-      placement="right"
-      size={720}
-      open={open}
-      onClose={onClose}
-    >
-      {isLoading && (
-        <div style={{ textAlign: "center", padding: "40px 0" }}>
-          <Spin description="Cargando información de la instancia..." />
-        </div>
-      )}
+    const processName = data
+      ? getProcessFriendlyName(
+          data.processDefinitionId,
+          definitionsData?.data,
+          availableProcesses,
+        )
+      : "Trámite";
 
-      {isError && (
-        <div style={{ padding: "16px 0", color: "#ef4444" }}>
-          {error instanceof Error
-            ? error.message
-            : "Error al cargar la instancia"}
-        </div>
-      )}
+    const activityInfo = data ? formatActivityName(data.activityId) : null;
 
-      {data && (
-        <Tabs
-          defaultActiveKey="info"
-          items={[
-            {
-              key: "info",
-              label: (
-                <span>
-                  <FileTextOutlined /> General
-                </span>
-              ),
-              children: (
-                <Descriptions
-                  bordered
-                  size="small"
-                  column={1}
-                  title="Información General"
-                >
-                  <Descriptions.Item label="ID de Instancia">
-                    <Text copyable>{data.id}</Text>
-                  </Descriptions.Item>
+    return (
+      <Drawer
+        title={
+          <Space>
+            <FileTextOutlined style={{ color: "#2563eb" }} />
+            <span>Detalle de la Solicitud</span>
+            {data?.businessKey ? (
+              <Tag
+                color="blue"
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  padding: "2px 8px",
+                  borderRadius: 4,
+                }}
+              >
+                {data.businessKey}
+              </Tag>
+            ) : (
+              <Tag color="default">Trámite en curso</Tag>
+            )}
+          </Space>
+        }
+        placement="right"
+        size={720}
+        open={open}
+        onClose={onClose}
+      >
+        {isLoading && (
+          <div style={{ textAlign: "center", padding: "40px 0" }}>
+            <Spin description="Cargando información de la solicitud..." />
+          </div>
+        )}
 
-                  <Descriptions.Item label="Clave de Negocio (Business Key)">
-                    {data.businessKey ? (
-                      <Tag color="blue">{data.businessKey}</Tag>
-                    ) : (
-                      <Text type="secondary">Sin clave de negocio</Text>
-                    )}
-                  </Descriptions.Item>
+        {isError && (
+          <div style={{ padding: "16px 0", color: "#ef4444" }}>
+            {error instanceof Error
+              ? error.message
+              : "Error al cargar la información de la solicitud"}
+          </div>
+        )}
 
-                  <Descriptions.Item label="Estado de Ejecución">
-                    {data.ended ? (
-                      <Badge status="default" text="Finalizado" />
-                    ) : data.suspended ? (
-                      <Badge status="error" text="Suspendido" />
-                    ) : (
-                      <Badge status="processing" text="En ejecución (Activo)" />
-                    )}
-                  </Descriptions.Item>
+        {data && (
+          <Tabs
+            defaultActiveKey="info"
+            items={[
+              {
+                key: "info",
+                label: (
+                  <span>
+                    <FileTextOutlined /> Resumen General
+                  </span>
+                ),
+                children: (
+                  <Space direction="vertical" size="large" style={{ width: "100%" }}>
+                    <Descriptions
+                      bordered
+                      size="small"
+                      column={1}
+                      title="Datos del Trámite"
+                    >
+                      <Descriptions.Item label="Código de Solicitud">
+                        {data.businessKey ? (
+                          <Tag
+                            color="blue"
+                            style={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              padding: "2px 8px",
+                            }}
+                          >
+                            <FileTextOutlined style={{ marginRight: 6 }} />
+                            {data.businessKey}
+                          </Tag>
+                        ) : (
+                          <Tag color="default">Trámite en curso (Sin código manual)</Tag>
+                        )}
+                      </Descriptions.Item>
 
-                  <Descriptions.Item label="Definición de Proceso">
-                    <Space direction="vertical" size={2}>
-                      <Text copyable>{data.processDefinitionId}</Text>
-                    </Space>
-                  </Descriptions.Item>
+                      <Descriptions.Item label="Solicitante / Registrado por">
+                        <Space size="small">
+                          <UserOutlined style={{ color: "#2563eb" }} />
+                          <Text strong style={{ fontSize: 13 }}>
+                            {data.registradoPor || data.startUserId || "Usuario solicitante"}
+                          </Text>
+                        </Space>
+                      </Descriptions.Item>
 
-                  <Descriptions.Item label="Actividad / Tarea Actual">
-                    {data.activityId ? (
-                      <Tag color="geekblue" icon={<ApartmentOutlined />}>
-                        {data.activityId}
-                      </Tag>
-                    ) : (
-                      <Text type="secondary">—</Text>
-                    )}
-                  </Descriptions.Item>
+                      <Descriptions.Item label="Tipo de Trámite / Proceso">
+                        <Text strong style={{ fontSize: 13, color: "#1e293b" }}>
+                          {processName}
+                        </Text>
+                      </Descriptions.Item>
 
-                  <Descriptions.Item label="Tenant ID">
-                    {data.tenantId ? (
-                      <Text>{data.tenantId}</Text>
-                    ) : (
-                      <Text type="secondary">(Por defecto)</Text>
-                    )}
-                  </Descriptions.Item>
+                      <Descriptions.Item label="Estado de Tramitación">
+                        {data.ended ? (
+                          <Tag color="success" icon={<CheckCircleOutlined />}>
+                            Finalizado
+                          </Tag>
+                        ) : data.suspended ? (
+                          <Tag color="warning" icon={<PauseCircleOutlined />}>
+                            Pausado
+                          </Tag>
+                        ) : (
+                          <Tag color="processing" icon={<SyncOutlined spin />}>
+                            En Proceso
+                          </Tag>
+                        )}
+                      </Descriptions.Item>
 
-                  <Descriptions.Item label="URL en Flowable">
-                    <Text ellipsis style={{ maxWidth: 300 }} type="secondary">
-                      {data.url}
-                    </Text>
-                  </Descriptions.Item>
-                </Descriptions>
-              ),
-            },
+                      <Descriptions.Item label="Etapa / Tarea Actual">
+                        {data.ended ? (
+                          <Tag color="default">Trámite concluido</Tag>
+                        ) : (
+                          <Tag
+                            color={activityInfo?.isCompletedOrEmpty ? "default" : "cyan"}
+                            icon={
+                              activityInfo?.isCompletedOrEmpty ? undefined : (
+                                <ClockCircleOutlined />
+                              )
+                            }
+                            style={{ fontSize: 12, padding: "2px 8px" }}
+                          >
+                            {activityInfo?.label ?? "En proceso"}
+                          </Tag>
+                        )}
+                      </Descriptions.Item>
+                    </Descriptions>
+
+                    {/* Información técnica reservada para soporte TI (oculta por defecto) */}
+                    <Collapse
+                      ghost
+                      size="small"
+                      items={[
+                        {
+                          key: "tech",
+                          label: (
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              <InfoCircleOutlined style={{ marginRight: 6 }} />
+                              Ver información técnica del sistema (para soporte TI)
+                            </Text>
+                          ),
+                          children: (
+                            <Descriptions bordered size="small" column={1}>
+                              <Descriptions.Item label="ID de Motor">
+                                <Text copyable style={{ fontSize: 12 }}>
+                                  {data.id}
+                                </Text>
+                              </Descriptions.Item>
+
+                              <Descriptions.Item label="Definición Interna">
+                                <Text copyable style={{ fontSize: 12 }}>
+                                  {data.processDefinitionId}
+                                </Text>
+                              </Descriptions.Item>
+
+                              {data.activityId && (
+                                <Descriptions.Item label="ID Actividad Flowable">
+                                  <Text style={{ fontSize: 12 }}>
+                                    {data.activityId}
+                                  </Text>
+                                </Descriptions.Item>
+                              )}
+
+                              {data.tenantId && (
+                                <Descriptions.Item label="Tenant ID">
+                                  <Text style={{ fontSize: 12 }}>
+                                    {data.tenantId}
+                                  </Text>
+                                </Descriptions.Item>
+                              )}
+
+                              <Descriptions.Item label="URL Interna Flowable">
+                                <Text
+                                  ellipsis
+                                  style={{ maxWidth: 350, fontSize: 12 }}
+                                  type="secondary"
+                                >
+                                  {data.url}
+                                </Text>
+                              </Descriptions.Item>
+                            </Descriptions>
+                          ),
+                        },
+                      ]}
+                    />
+                  </Space>
+                ),
+              },
             {
               key: "diagram",
               label: (

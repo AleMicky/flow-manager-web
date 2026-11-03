@@ -1,4 +1,4 @@
-import { createBrowserRouter } from "react-router-dom";
+import { Navigate, createBrowserRouter } from "react-router-dom";
 import { MainLayout } from "../layouts/MainLayout";
 import { Dashboard } from "../features/dashboard/Dashboard";
 import { ProtectedRoute } from "../features/auth/components/ProtectedRoute";
@@ -7,6 +7,7 @@ import { LoginPage } from "../features/auth/pages/LoginPage";
 import { DefinitionsPage } from "../features/definitions";
 import { InstancesPage } from "../features/instances";
 import { TasksPage } from "../features/tasks";
+import { ApprovalsPage } from "../features/approvals";
 import { KeycloakAdminPage } from "../features/keycloak-admin";
 
 function Placeholder({ title }: { title: string }) {
@@ -35,7 +36,7 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: "instancias",
-                        element: <InstancesPage />,
+                        element: <Navigate to="/solicitudes" replace />,
                     },
                     {
                         path: "tareas",
@@ -43,7 +44,7 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: "aprobaciones",
-                        element: <Placeholder title="Aprobaciones" />,
+                        element: <ApprovalsPage />,
                     },
                     {
                         path: "procesos",
