@@ -8,6 +8,9 @@ export const DEFINITIONS_ENDPOINTS = {
     `/workflow/definitions/key/${encodeURIComponent(key)}/versions`,
   /** Consultar detalle de una definición por su ID único */
   BY_ID: (id: string) => `/workflow/definitions/${encodeURIComponent(id)}`,
+  /** Activar o suspender (inactivar) una definición BPMN */
+  UPDATE_STATUS: (id: string) =>
+    `/workflow/definitions/${encodeURIComponent(id)}/status`,
   /** Recuperar el contenido XML BPMN 2.0 de una definición */
   XML: (id: string) => `/workflow/definitions/${encodeURIComponent(id)}/xml`,
   /** Publicar (deploy) un nuevo archivo o especificación XML BPMN */

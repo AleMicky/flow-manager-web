@@ -95,7 +95,7 @@ export function ApprovalsPage() {
 
   // Consultas
   const { data: availableProcesses } = useAvailableProcessesQuery();
-  const { data: definitionsData } = useDefinitionsQuery({ size: 100 });
+  const { data: definitionsData } = useDefinitionsQuery({ size: 100, latest: true });
 
   const mineParams = {
     start: 0,

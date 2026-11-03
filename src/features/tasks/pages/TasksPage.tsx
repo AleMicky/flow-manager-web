@@ -87,7 +87,7 @@ export function TasksPage() {
 
   // Consultas de catálogo para nombres amigables de procesos
   const { data: availableProcesses } = useAvailableProcessesQuery();
-  const { data: definitionsData } = useDefinitionsQuery({ size: 100 });
+  const { data: definitionsData } = useDefinitionsQuery({ size: 100, latest: true });
 
   // Queries
   const mineParams = {

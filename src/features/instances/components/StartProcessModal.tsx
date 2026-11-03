@@ -64,9 +64,9 @@ export function StartProcessModal({
   );
   const [showJsonMode, setShowJsonMode] = useState<boolean>(false);
 
-  // Consulta de definiciones desde Flowable
+  // Consulta de definiciones desde Flowable (solo activas y última versión para evitar listas excesivas)
   const { data: definitionsData, isLoading: loadingDefinitions } =
-    useDefinitionsQuery({ size: 100 });
+    useDefinitionsQuery({ size: 100, latest: true, suspended: false });
 
   // Consulta de procesos con esquema configurado en BD
   const { data: availableProcesses, isLoading: loadingAvailable } =
@@ -208,9 +208,9 @@ export function StartProcessModal({
       });
     });
 
-    // Procesos desplegados en Flowable
+    // Procesos desplegados en Flowable (filtrando suspendidos e inactivos)
     definitionsData?.data?.forEach((def) => {
-      if (!combinedOptionsMap.has(def.key)) {
+      if (!def.suspended && !combinedOptionsMap.has(def.key)) {
         const readable =
           def.name ||
           def.key

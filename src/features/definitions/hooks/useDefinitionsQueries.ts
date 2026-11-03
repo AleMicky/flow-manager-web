@@ -4,6 +4,7 @@ import { definitionsService } from "../services/definitions.service";
 import type {
   DeployProcessPayload,
   QueryDefinitionsParams,
+  UpdateDefinitionStatusPayload,
 } from "../types/definitions.types";
 
 /**
@@ -50,6 +51,29 @@ export function useDefinitionXmlQuery(id?: string, enabled = true) {
     queryFn: () => definitionsService.getXml(id!),
     enabled: Boolean(id) && enabled,
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Mutación para activar o suspender (inactivar) una definición BPMN.
+ */
+export function useUpdateDefinitionStatusMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      id,
+      payload,
+    }: {
+      id: string;
+      payload: UpdateDefinitionStatusPayload;
+    }) => definitionsService.updateStatus(id, payload),
+    onSuccess: () => {
+      // Invalida todas las consultas de definiciones para actualizar la vista
+      queryClient.invalidateQueries({
+        queryKey: DEFINITIONS_QUERY_KEYS.all,
+      });
+    },
   });
 }
 

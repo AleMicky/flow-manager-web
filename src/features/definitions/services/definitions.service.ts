@@ -7,6 +7,7 @@ import type {
   ProcessDefinition,
   ProcessVersionsResponse,
   QueryDefinitionsParams,
+  UpdateDefinitionStatusPayload,
 } from "../types/definitions.types";
 
 export const definitionsService = {
@@ -65,6 +66,21 @@ export const definitionsService = {
     const response = await api.get<string>(DEFINITIONS_ENDPOINTS.XML(id), {
       responseType: "text",
     });
+    return response.data;
+  },
+
+  /**
+   * Activa o suspende (inactiva) una definición BPMN en Flowable.
+   * Endpoint: PUT /api/workflow/definitions/:id/status
+   */
+  async updateStatus(
+    id: string,
+    payload: UpdateDefinitionStatusPayload,
+  ): Promise<ProcessDefinition> {
+    const response = await api.put<ProcessDefinition>(
+      DEFINITIONS_ENDPOINTS.UPDATE_STATUS(id),
+      payload,
+    );
     return response.data;
   },
 

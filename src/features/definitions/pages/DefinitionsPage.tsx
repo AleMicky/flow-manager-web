@@ -1,30 +1,39 @@
 import {
   ApartmentOutlined,
+  CheckCircleOutlined,
   CloudUploadOutlined,
   EyeOutlined,
   HistoryOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
   SearchOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 import {
   Badge,
   Button,
   Card,
   Input,
+  Popconfirm,
+  Select,
   Space,
+  Switch,
   Table,
   Tag,
   Tooltip,
   Typography,
+  message,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import { useState } from "react";
 import { BpmnXmlModal } from "../components/BpmnXmlModal";
 import { DeployBpmnModal } from "../components/DeployBpmnModal";
 import { ProcessVersionsDrawer } from "../components/ProcessVersionsDrawer";
-import { useDefinitionsQuery } from "../hooks/useDefinitionsQueries";
-import type { ProcessDefinition } from "../types/definitions.types";
+import {
+  useDefinitionsQuery,
+  useUpdateDefinitionStatusMutation,
+} from "../hooks/useDefinitionsQueries";
+import type { ProcessDefinition, QueryDefinitionsParams } from "../types/definitions.types";
 import { useAuthStore } from "../../../stores/auth.store";
 import { StartProcessModal } from "../../instances/components/StartProcessModal";
 
@@ -35,6 +44,8 @@ export function DefinitionsPage() {
   const [pageSize, setPageSize] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "suspended">("all");
+  const [latestOnly, setLatestOnly] = useState(true);
 
   // Modals state
   const [deployModalOpen, setDeployModalOpen] = useState(false);
@@ -61,16 +72,23 @@ export function DefinitionsPage() {
     open: false,
   });
 
-  const queryParams = {
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+
+  const queryParams: QueryDefinitionsParams = {
     start: (page - 1) * pageSize,
     size: pageSize,
     ...(debouncedSearch
       ? { name: debouncedSearch, key: debouncedSearch }
       : {}),
+    ...(latestOnly ? { latest: true } : {}),
+    ...(statusFilter === "active" ? { suspended: false } : {}),
+    ...(statusFilter === "suspended" ? { suspended: true } : {}),
   };
 
   const { data, isLoading, refetch, isFetching } =
     useDefinitionsQuery(queryParams);
+
+  const updateStatusMutation = useUpdateDefinitionStatusMutation();
 
   const handleSearch = () => {
     setPage(1);
@@ -80,6 +98,7 @@ export function DefinitionsPage() {
   const handleResetSearch = () => {
     setSearchTerm("");
     setDebouncedSearch("");
+    setStatusFilter("all");
     setPage(1);
   };
 
@@ -92,6 +111,38 @@ export function DefinitionsPage() {
     }
   };
 
+  const handleToggleStatus = async (record: ProcessDefinition) => {
+    const nextAction = record.suspended ? "activate" : "suspend";
+    const label = record.suspended ? "activar" : "inactivar";
+
+    try {
+      setTogglingId(record.id);
+      await updateStatusMutation.mutateAsync({
+        id: record.id,
+        payload: { action: nextAction, includeProcessInstances: false },
+      });
+      message.success(
+        `Proceso "${record.name || record.key}" ${
+          record.suspended ? "activado" : "inactivado"
+        } exitosamente`,
+      );
+    } catch (err: unknown) {
+      const axErr = err as { response?: { data?: { message?: string } } };
+      message.error(
+        axErr.response?.data?.message || `Error al ${label} el proceso BPMN`,
+      );
+    } finally {
+      setTogglingId(null);
+    }
+  };
+
+  const user = useAuthStore((s) => s.user);
+  const canDeploy = Boolean(
+    user?.roles?.some((r) =>
+      ["workflow-admin", "workflow-designer"].includes(r),
+    ),
+  );
+
   const columns: ColumnsType<ProcessDefinition> = [
     {
       title: "Proceso",
@@ -99,9 +150,16 @@ export function DefinitionsPage() {
       key: "name",
       render: (name: string, record) => (
         <div>
-          <Text strong style={{ fontSize: 14 }}>
-            {name || record.key}
-          </Text>
+          <Space orientation="horizontal" size="small">
+            <Text strong style={{ fontSize: 14 }}>
+              {name || record.key}
+            </Text>
+            {record.suspended && (
+              <Tag color="error" style={{ fontSize: 11, lineHeight: "16px" }}>
+                Inactivo
+              </Tag>
+            )}
+          </Space>
           {record.description && (
             <Paragraph
               type="secondary"
@@ -128,7 +186,7 @@ export function DefinitionsPage() {
       title: "Versión",
       dataIndex: "version",
       key: "version",
-      width: 100,
+      width: 90,
       align: "center",
       render: (version: number) => <Tag color="purple">v{version}</Tag>,
     },
@@ -136,10 +194,10 @@ export function DefinitionsPage() {
       title: "Estado",
       dataIndex: "suspended",
       key: "suspended",
-      width: 120,
+      width: 130,
       render: (suspended: boolean) =>
         suspended ? (
-          <Badge status="error" text="Suspendido" />
+          <Badge status="error" text="Inactivo" />
         ) : (
           <Badge status="success" text="Activo" />
         ),
@@ -159,71 +217,128 @@ export function DefinitionsPage() {
     {
       title: "Acciones",
       key: "actions",
-      width: 230,
+      width: 290,
       fixed: "right",
-      render: (_, record) => (
-        <Space size="small">
-          <Tooltip title="Iniciar nueva instancia de este proceso">
-            <Button
-              type="text"
-              size="small"
-              style={{ color: "#10b981" }}
-              icon={<PlayCircleOutlined />}
-              onClick={() =>
-                setStartInstanceModal({
-                  open: true,
-                  processKey: record.key,
-                })
-              }
-            >
-              Iniciar
-            </Button>
-          </Tooltip>
+      render: (_, record) => {
+        const isCurrentlyToggling = togglingId === record.id;
 
-          <Tooltip title="Ver y descargar XML BPMN">
-            <Button
-              type="text"
-              size="small"
-              icon={<EyeOutlined />}
-              onClick={() =>
-                setXmlModal({
-                  open: true,
-                  definitionId: record.id,
-                  processName: record.name || record.key,
-                })
+        return (
+          <Space size="small" wrap>
+            <Tooltip
+              title={
+                record.suspended
+                  ? "Proceso suspendido/inactivo. Debe activarlo para iniciar nuevas solicitudes."
+                  : "Iniciar nueva solicitud de este proceso"
               }
             >
-              XML
-            </Button>
-          </Tooltip>
+              <Button
+                type="text"
+                size="small"
+                disabled={record.suspended}
+                style={{ color: record.suspended ? undefined : "#10b981" }}
+                icon={<PlayCircleOutlined />}
+                onClick={() =>
+                  setStartInstanceModal({
+                    open: true,
+                    processKey: record.key,
+                  })
+                }
+              >
+                Iniciar
+              </Button>
+            </Tooltip>
 
-          <Tooltip title="Consultar versiones anteriores">
-            <Button
-              type="text"
-              size="small"
-              icon={<HistoryOutlined />}
-              onClick={() =>
-                setVersionsDrawer({
-                  open: true,
-                  processKey: record.key,
-                  processName: record.name || record.key,
-                })
+            {/* Botón para Activar / Inactivar */}
+            <Tooltip
+              title={
+                !canDeploy
+                  ? "Requiere rol workflow-admin o workflow-designer"
+                  : record.suspended
+                  ? "Activar proceso para que aparezca en formularios y permita nuevas instancias"
+                  : "Inactivar proceso para ocultarlo de formularios y bloquear nuevas instancias"
               }
             >
-              Versiones
-            </Button>
-          </Tooltip>
-        </Space>
-      ),
+              <Popconfirm
+                title={
+                  record.suspended
+                    ? "¿Activar este proceso?"
+                    : "¿Inactivar (suspender) este proceso?"
+                }
+                description={
+                  record.suspended
+                    ? "Volverá a aparecer en el formulario de inicio y permitirá crear solicitudes."
+                    : "Ya no se mostrará en el formulario de inicio y no se podrán crear nuevas solicitudes."
+                }
+                okText={record.suspended ? "Sí, activar" : "Sí, inactivar"}
+                cancelText="Cancelar"
+                okButtonProps={{
+                  danger: !record.suspended,
+                }}
+                disabled={!canDeploy}
+                onConfirm={() => handleToggleStatus(record)}
+              >
+                <Button
+                  type="text"
+                  size="small"
+                  disabled={!canDeploy}
+                  loading={isCurrentlyToggling}
+                  danger={!record.suspended}
+                  style={
+                    record.suspended
+                      ? { color: "#16a34a" }
+                      : { color: "#ea580c" }
+                  }
+                  icon={
+                    record.suspended ? (
+                      <CheckCircleOutlined />
+                    ) : (
+                      <StopOutlined />
+                    )
+                  }
+                >
+                  {record.suspended ? "Activar" : "Inactivar"}
+                </Button>
+              </Popconfirm>
+            </Tooltip>
+
+            <Tooltip title="Ver y descargar XML BPMN">
+              <Button
+                type="text"
+                size="small"
+                icon={<EyeOutlined />}
+                onClick={() =>
+                  setXmlModal({
+                    open: true,
+                    definitionId: record.id,
+                    processName: record.name || record.key,
+                  })
+                }
+              >
+                XML
+              </Button>
+            </Tooltip>
+
+            <Tooltip title="Consultar versiones anteriores">
+              <Button
+                type="text"
+                size="small"
+                icon={<HistoryOutlined />}
+                onClick={() =>
+                  setVersionsDrawer({
+                    open: true,
+                    processKey: record.key,
+                    processName: record.name || record.key,
+                  })
+                }
+              >
+                Versiones
+              </Button>
+            </Tooltip>
+          </Space>
+        );
+      },
     },
   ];
-
-  const user = useAuthStore((s) => s.user);
-  const canDeploy = Boolean(
-    user?.roles?.some((r) =>
-      ["workflow-admin", "workflow-designer"].includes(r),
-    ),
-  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -243,7 +358,7 @@ export function DefinitionsPage() {
             Definiciones de Procesos BPMN
           </Title>
           <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
-            Catálogo de diagramas y flujos de trabajo publicados en el motor Flowable.
+            Catálogo de diagramas y flujos de trabajo publicados en el motor Flowable. Puedes activar o inactivar procesos para controlar su disponibilidad en los formularios.
           </Paragraph>
         </div>
 
@@ -276,26 +391,54 @@ export function DefinitionsPage() {
       {/* Barra de Filtros y Búsqueda */}
       <Card size="small">
         <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
-          <Space wrap>
+          <Space wrap size="middle">
             <Input
               placeholder="Buscar por nombre o clave..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onPressEnter={handleSearch}
-              style={{ width: 280 }}
+              style={{ width: 240 }}
               allowClear
               prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
             />
+
+            <Select
+              value={statusFilter}
+              onChange={(val) => {
+                setStatusFilter(val);
+                setPage(1);
+              }}
+              style={{ width: 170 }}
+              options={[
+                { value: "all", label: "Todos los estados" },
+                { value: "active", label: "Solo Activos" },
+                { value: "suspended", label: "Solo Inactivos" },
+              ]}
+            />
+
+            <Space size="small">
+              <Switch
+                size="small"
+                checked={latestOnly}
+                onChange={(checked) => {
+                  setLatestOnly(checked);
+                  setPage(1);
+                }}
+              />
+              <Text style={{ fontSize: 13 }}>Solo última versión</Text>
+            </Space>
+
             <Button type="primary" onClick={handleSearch}>
               Buscar
             </Button>
-            {debouncedSearch && (
-              <Button onClick={handleResetSearch}>Limpiar filtro</Button>
+
+            {(debouncedSearch || statusFilter !== "all" || !latestOnly) && (
+              <Button onClick={handleResetSearch}>Limpiar filtros</Button>
             )}
           </Space>
 
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Total registrados: <Text strong>{data?.total ?? 0}</Text>
+            Total registros: <Text strong>{data?.total ?? 0}</Text>
           </Text>
         </Space>
       </Card>
@@ -307,7 +450,7 @@ export function DefinitionsPage() {
           columns={columns}
           dataSource={data?.data ?? []}
           loading={isLoading}
-          scroll={{ x: 800 }}
+          scroll={{ x: 850 }}
           pagination={{
             current: page,
             pageSize: pageSize,

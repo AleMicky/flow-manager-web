@@ -27,6 +27,13 @@ export interface QueryDefinitionsParams {
   size?: number;
   name?: string;
   key?: string;
+  latest?: boolean;
+  suspended?: boolean;
+}
+
+export interface UpdateDefinitionStatusPayload {
+  action: "suspend" | "activate";
+  includeProcessInstances?: boolean;
 }
 
 export interface DeployProcessPayload {
