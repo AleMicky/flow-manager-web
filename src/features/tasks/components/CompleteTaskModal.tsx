@@ -174,24 +174,24 @@ export function CompleteTaskModal({
       {task && (
         <div style={{ marginBottom: 16 }}>
           <Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            Registra la decisión y los datos requeridos para avanzar esta etapa del flujo.
+            Registra los datos requeridos para completar y avanzar esta actividad.
           </Paragraph>
           <div
             style={{
-              background: "#0f172a",
-              padding: 12,
-              borderRadius: 8,
-              border: "1px solid #1e293b",
+              background: "#f8fafc",
+              padding: "10px 14px",
+              borderRadius: 6,
+              border: "1px solid #e2e8f0",
             }}
           >
-            <div>
-              <Text strong style={{ color: "#f8fafc" }}>
-                {task.name || task.id}
-              </Text>
-            </div>
-            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
-              ID: {task.id} | Paso BPMN: <code>{task.taskDefinitionKey || "—"}</code>
-            </div>
+            <Text strong style={{ color: "#1e293b", fontSize: 14 }}>
+              {task.name || "Actividad pendiente"}
+            </Text>
+            {task.description && (
+              <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                {task.description}
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -9,10 +9,8 @@ import { InstancesPage } from "../features/instances";
 import { TasksPage } from "../features/tasks";
 import { ApprovalsPage } from "../features/approvals";
 import { KeycloakAdminPage } from "../features/keycloak-admin";
-
-function Placeholder({ title }: { title: string }) {
-    return <h2>{title}</h2>;
-}
+import { UserProfilePage } from "../features/profile";
+import { NotFoundPage } from "../features/common";
 
 export const router = createBrowserRouter([
     {
@@ -60,7 +58,11 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: "perfil",
-                        element: <Placeholder title="Mi Perfil" />,
+                        element: <UserProfilePage />,
+                    },
+                    {
+                        path: "*",
+                        element: <NotFoundPage />,
                     },
                 ],
             },

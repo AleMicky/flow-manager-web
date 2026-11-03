@@ -13,6 +13,7 @@ import {
 import { Badge, Button, Menu, Tooltip, Typography } from "antd";
 import type { MenuProps } from "antd";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useAuthStore } from "../../stores/auth.store";
 import { useInstancesQuery } from "../../features/instances";
 import { useMyTasksQuery } from "../../features/tasks";
 
@@ -33,6 +34,16 @@ export function AppSidebar({
 }: AppSidebarProps) {
     const navigate = useNavigate();
     const location = useLocation();
+    const { user } = useAuthStore();
+
+    const isAdmin = Boolean(
+        user?.roles?.some((r) =>
+            ["workflow-admin", "admin", "realm-admin", "superadmin"].includes(
+                r.toLowerCase(),
+            ),
+        ),
+    );
+
     const { data: instancesData } = useInstancesQuery({ size: 1 });
     const activeInstancesCount = instancesData?.total ?? 0;
 
@@ -128,28 +139,32 @@ export function AppSidebar({
                 },
             ],
         },
-        {
-            key: "administracion",
-            type: "group",
-            label: "ADMINISTRACIÓN",
-            children: [
-                {
-                    key: "/procesos",
-                    icon: <ApartmentOutlined />,
-                    label: "Procesos BPMN",
-                },
-                {
-                    key: "/usuarios",
-                    icon: <SafetyCertificateOutlined />,
-                    label: "Usuarios y Roles",
-                },
-                {
-                    key: "/configuracion",
-                    icon: <SettingOutlined />,
-                    label: "Configuración",
-                },
-            ],
-        },
+        ...(isAdmin
+            ? [
+                  {
+                      key: "administracion",
+                      type: "group" as const,
+                      label: "ADMINISTRACIÓN",
+                      children: [
+                          {
+                              key: "/procesos",
+                              icon: <ApartmentOutlined />,
+                              label: "Procesos BPMN",
+                          },
+                          {
+                              key: "/usuarios",
+                              icon: <SafetyCertificateOutlined />,
+                              label: "Usuarios y Roles",
+                          },
+                          {
+                              key: "/configuracion",
+                              icon: <SettingOutlined />,
+                              label: "Configuración",
+                          },
+                      ],
+                  },
+              ]
+            : []),
     ];
 
     return (

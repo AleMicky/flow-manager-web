@@ -3,11 +3,13 @@ import {
   CheckSquareOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
+  InfoCircleOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import {
   Badge,
   Button,
+  Collapse,
   Descriptions,
   Drawer,
   Empty,
@@ -18,6 +20,9 @@ import {
   Typography,
 } from "antd";
 import dayjs from "dayjs";
+import { useDefinitionsQuery } from "../../definitions/hooks/useDefinitionsQueries";
+import { useAvailableProcessesQuery } from "../../instances/hooks/useInstancesQueries";
+import { getProcessFriendlyName } from "../../instances/utils/instanceFormatters";
 import {
   useTaskDetailQuery,
   useTaskVariablesQuery,
@@ -45,6 +50,9 @@ export function TaskDetailDrawer({
   onComplete,
   isMyTask,
 }: TaskDetailDrawerProps) {
+  const { data: availableProcesses } = useAvailableProcessesQuery();
+  const { data: definitionsData } = useDefinitionsQuery({ size: 100 });
+
   const { data, isLoading, isError, error } = useTaskDetailQuery(
     taskId ?? undefined,
     open && Boolean(taskId),
@@ -55,13 +63,20 @@ export function TaskDetailDrawer({
     open && Boolean(taskId),
   );
 
+  const processName = data?.processDefinitionId
+    ? getProcessFriendlyName(
+        data.processDefinitionId,
+        definitionsData?.data,
+        availableProcesses,
+      )
+    : "Trámite General";
+
   return (
     <Drawer
       title={
         <Space>
-          <CheckSquareOutlined style={{ color: "#3b82f6" }} />
-          <span>Detalle de Tarea</span>
-          {taskId && <Tag color="blue">{taskId}</Tag>}
+          <CheckSquareOutlined style={{ color: "#2563eb" }} />
+          <span>Detalle de la Actividad</span>
         </Space>
       }
       placement="right"
@@ -138,17 +153,19 @@ export function TaskDetailDrawer({
             bordered
             size="small"
             column={1}
-            title={data.name || "Tarea sin nombre"}
+            title={data.name || "Actividad pendiente"}
           >
-            <Descriptions.Item label="ID de Tarea">
-              <Text copyable>{data.id}</Text>
+            <Descriptions.Item label="Trámite Relacionado">
+              <Text strong style={{ color: "#1e293b", fontSize: 13 }}>
+                {processName}
+              </Text>
             </Descriptions.Item>
 
             <Descriptions.Item label="Descripción">
               {data.description ? (
                 <Text>{data.description}</Text>
               ) : (
-                <Text type="secondary">Sin descripción</Text>
+                <Text type="secondary">Sin descripción adicional</Text>
               )}
             </Descriptions.Item>
 
@@ -168,55 +185,68 @@ export function TaskDetailDrawer({
 
             <Descriptions.Item label="Prioridad">
               {data.priority > 50 ? (
-                <Tag color="red">Alta ({data.priority})</Tag>
+                <Tag color="red">Alta</Tag>
               ) : data.priority === 50 ? (
-                <Tag color="orange">Normal ({data.priority})</Tag>
+                <Tag color="blue">Normal</Tag>
               ) : (
-                <Tag color="blue">Baja ({data.priority})</Tag>
+                <Tag color="default">Baja</Tag>
               )}
             </Descriptions.Item>
 
-            <Descriptions.Item label="Fecha de Creación">
+            <Descriptions.Item label="Fecha de Asignación">
               <Space>
                 <ClockCircleOutlined style={{ color: "#94a3b8" }} />
                 <Text>
-                  {dayjs(data.createTime).format("DD/MM/YYYY HH:mm:ss")}
+                  {dayjs(data.createTime).format("DD/MM/YYYY HH:mm")}
                 </Text>
               </Space>
             </Descriptions.Item>
 
-            <Descriptions.Item label="Fecha Límite (Due Date)">
-              {data.dueDate ? (
-                <Text>{dayjs(data.dueDate).format("DD/MM/YYYY HH:mm:ss")}</Text>
-              ) : (
-                <Text type="secondary">—</Text>
-              )}
-            </Descriptions.Item>
-
-            <Descriptions.Item label="ID de Instancia de Proceso">
-              {data.processInstanceId ? (
-                <Text copyable>{data.processInstanceId}</Text>
-              ) : (
-                <Text type="secondary">—</Text>
-              )}
-            </Descriptions.Item>
-
-            <Descriptions.Item label="ID de Definición de Proceso">
-              {data.processDefinitionId ? (
-                <Text copyable>{data.processDefinitionId}</Text>
-              ) : (
-                <Text type="secondary">—</Text>
-              )}
-            </Descriptions.Item>
-
-            <Descriptions.Item label="Clave de Tarea (Task Definition Key)">
-              {data.taskDefinitionKey ? (
-                <Tag color="geekblue">{data.taskDefinitionKey}</Tag>
-              ) : (
-                <Text type="secondary">—</Text>
-              )}
-            </Descriptions.Item>
+            {data.dueDate && (
+              <Descriptions.Item label="Fecha Límite">
+                <Text>{dayjs(data.dueDate).format("DD/MM/YYYY HH:mm")}</Text>
+              </Descriptions.Item>
+            )}
           </Descriptions>
+
+          {/* Sección colapsable técnica reservada para soporte TI */}
+          <Collapse
+            ghost
+            size="small"
+            items={[
+              {
+                key: "tech",
+                label: (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    <InfoCircleOutlined style={{ marginRight: 6 }} />
+                    Ver información técnica del sistema (para soporte TI)
+                  </Text>
+                ),
+                children: (
+                  <Descriptions bordered size="small" column={1}>
+                    <Descriptions.Item label="ID de Tarea">
+                      <Text copyable style={{ fontSize: 12 }}>{data.id}</Text>
+                    </Descriptions.Item>
+                    {data.processInstanceId && (
+                      <Descriptions.Item label="ID de Instancia">
+                        <Text copyable style={{ fontSize: 12 }}>{data.processInstanceId}</Text>
+                      </Descriptions.Item>
+                    )}
+                    {data.taskDefinitionKey && (
+                      <Descriptions.Item label="Clave Técnica BPMN">
+                        <Text style={{ fontSize: 12 }}>{data.taskDefinitionKey}</Text>
+                      </Descriptions.Item>
+                    )}
+                    {data.processDefinitionId && (
+                      <Descriptions.Item label="Definición de Proceso">
+                        <Text style={{ fontSize: 12 }}>{data.processDefinitionId}</Text>
+                      </Descriptions.Item>
+                    )}
+                  </Descriptions>
+                ),
+              },
+            ]}
+          />
 
           {/* Antecedentes, variables previas y documentos adjuntos */}
           <TaskAntecedentsViewer

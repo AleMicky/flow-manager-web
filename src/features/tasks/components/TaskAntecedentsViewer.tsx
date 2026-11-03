@@ -208,6 +208,7 @@ export function TaskAntecedentsViewer({
                       }}
                       actions={[
                         <Button
+                          key="preview"
                           type="text"
                           size="small"
                           icon={<EyeOutlined />}
@@ -216,6 +217,7 @@ export function TaskAntecedentsViewer({
                           Ver
                         </Button>,
                         <Button
+                          key="download"
                           type="text"
                           size="small"
                           icon={<DownloadOutlined />}
