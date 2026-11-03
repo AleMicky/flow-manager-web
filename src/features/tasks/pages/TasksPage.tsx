@@ -44,6 +44,7 @@ import {
   useUnclaimTaskMutation,
 } from "../hooks/useTasksQueries";
 import type { WorkflowTask } from "../types/tasks.types";
+import { isOperationalTask } from "../utils/taskTypeClassifier";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -90,14 +91,14 @@ export function TasksPage() {
 
   // Queries
   const mineParams = {
-    start: (minePage - 1) * minePageSize,
-    size: minePageSize,
+    start: 0,
+    size: 100,
     ...(appliedSearch ? { name: appliedSearch } : {}),
   };
 
   const availableParams = {
-    start: (availablePage - 1) * availablePageSize,
-    size: availablePageSize,
+    start: 0,
+    size: 100,
     ...(appliedSearch ? { name: appliedSearch } : {}),
   };
 
@@ -114,6 +115,28 @@ export function TasksPage() {
     refetch: refetchAvailable,
     isFetching: fetchingAvailable,
   } = useAvailableTasksQuery(availableParams);
+
+  // Filtrar estrictamente solo tareas operativas (gestión, formularios, asignación)
+  const allFilteredMine = useMemo(() => {
+    return (mineData?.data ?? []).filter(isOperationalTask);
+  }, [mineData?.data]);
+
+  const allFilteredAvailable = useMemo(() => {
+    return (availableData?.data ?? []).filter(isOperationalTask);
+  }, [availableData?.data]);
+
+  const myCount = allFilteredMine.length;
+  const availableCount = allFilteredAvailable.length;
+
+  const paginatedMine = useMemo(() => {
+    const start = (minePage - 1) * minePageSize;
+    return allFilteredMine.slice(start, start + minePageSize);
+  }, [allFilteredMine, minePage, minePageSize]);
+
+  const paginatedAvailable = useMemo(() => {
+    const start = (availablePage - 1) * availablePageSize;
+    return allFilteredAvailable.slice(start, start + availablePageSize);
+  }, [allFilteredAvailable, availablePage, availablePageSize]);
 
   // Mutations
   const claimMutation = useClaimTaskMutation();
@@ -344,22 +367,43 @@ export function TasksPage() {
   const availableColumns: ColumnsType<WorkflowTask> = useMemo(
     () => [
       ...commonColumns,
+      ...(isAdmin
+        ? [
+            {
+              title: "Asignado a",
+              dataIndex: "assignee",
+              key: "assignee",
+              width: 170,
+              render: (assignee: string | null) =>
+                assignee ? (
+                  <Tag color="geekblue" icon={<UserOutlined />}>
+                    @{assignee}
+                  </Tag>
+                ) : (
+                  <Tag color="default">Sin asignar</Tag>
+                ),
+            },
+          ]
+        : []),
       {
         title: "Acciones",
         key: "actions",
-        width: isAdmin ? 280 : 200,
+        width: isAdmin ? 300 : 200,
         fixed: "right",
         render: (_, record) => (
           <Space size="small">
-            <Button
-              type="primary"
-              size="small"
-              icon={<UserOutlined />}
-              loading={claimMutation.isPending}
-              onClick={() => handleClaim(record.id)}
-            >
-              Tomar Tarea
-            </Button>
+            {record.assignee !== user?.id &&
+              record.assignee !== user?.username && (
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<UserOutlined />}
+                  loading={claimMutation.isPending}
+                  onClick={() => handleClaim(record.id)}
+                >
+                  {record.assignee ? "Reasignarme" : "Tomar Tarea"}
+                </Button>
+              )}
 
             {isAdmin && (
               <Button
@@ -390,11 +434,16 @@ export function TasksPage() {
         ),
       },
     ],
-    [commonColumns, claimMutation.isPending, handleClaim, isAdmin, handleDirectComplete],
+    [
+      commonColumns,
+      claimMutation.isPending,
+      handleClaim,
+      isAdmin,
+      handleDirectComplete,
+      user?.id,
+      user?.username,
+    ],
   );
-
-  const myCount = mineData?.total ?? 0;
-  const availableCount = availableData?.total ?? 0;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -548,7 +597,7 @@ export function TasksPage() {
                 <Table<WorkflowTask>
                   rowKey="id"
                   columns={mineColumns}
-                  dataSource={mineData?.data ?? []}
+                  dataSource={paginatedMine}
                   loading={loadingMine}
                   scroll={{ x: 860 }}
                   style={{ marginBottom: 16 }}
@@ -585,7 +634,7 @@ export function TasksPage() {
               label: (
                 <Space>
                   <InboxOutlined />
-                  <span>Disponibles para Reclamar</span>
+                  <span>{isAdmin ? "Todas las Tareas en Curso" : "Disponibles para Reclamar"}</span>
                   <Badge
                     count={availableCount}
                     overflowCount={99}
@@ -597,7 +646,7 @@ export function TasksPage() {
                 <Table<WorkflowTask>
                   rowKey="id"
                   columns={availableColumns}
-                  dataSource={availableData?.data ?? []}
+                  dataSource={paginatedAvailable}
                   loading={loadingAvailable}
                   scroll={{ x: 800 }}
                   style={{ marginBottom: 16 }}

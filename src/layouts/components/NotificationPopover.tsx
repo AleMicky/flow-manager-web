@@ -11,6 +11,7 @@ import {
   useAvailableTasksQuery,
   useMyTasksQuery,
 } from "../../features/tasks/hooks/useTasksQueries";
+import { isApprovalTask } from "../../features/tasks/utils/taskTypeClassifier";
 
 const { Text } = Typography;
 
@@ -36,9 +37,10 @@ export function NotificationPopover() {
 
     // Tareas pendientes asignadas al usuario
     (myTasksData?.data || []).forEach((t) => {
+      const isAppr = isApprovalTask(t);
       list.push({
         id: `my-${t.id}`,
-        title: "Tarea Asignada Pendiente",
+        title: isAppr ? "Aprobación Pendiente" : "Tarea Operativa Pendiente",
         desc: t.name || "Actividad pendiente de atención",
         time: t.createTime
           ? new Intl.DateTimeFormat("es-ES", {
@@ -48,17 +50,18 @@ export function NotificationPopover() {
               month: "short",
             }).format(new Date(t.createTime))
           : "Reciente",
-        type: "warning",
-        targetRoute: "/tareas",
+        type: isAppr ? "info" : "warning",
+        targetRoute: isAppr ? "/aprobaciones" : "/tareas",
       });
     });
 
-    // Aprobaciones disponibles
+    // Actividades disponibles en cola
     (availableTasksData?.data || []).forEach((t) => {
+      const isAppr = isApprovalTask(t);
       list.push({
         id: `avail-${t.id}`,
-        title: "Aprobación por Evaluar",
-        desc: t.name || "Trámite en espera de dictamen",
+        title: isAppr ? "Aprobación por Evaluar" : "Tarea Disponible para Tomar",
+        desc: t.name || "Trámite en espera de atención",
         time: t.createTime
           ? new Intl.DateTimeFormat("es-ES", {
               hour: "2-digit",
@@ -68,7 +71,7 @@ export function NotificationPopover() {
             }).format(new Date(t.createTime))
           : "Reciente",
         type: "info",
-        targetRoute: "/aprobaciones",
+        targetRoute: isAppr ? "/aprobaciones" : "/tareas",
       });
     });
 

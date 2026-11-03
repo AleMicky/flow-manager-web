@@ -11,6 +11,7 @@ import {
   ReloadOutlined,
   SearchOutlined,
   ThunderboltOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import {
   Badge,
@@ -46,6 +47,7 @@ import {
   useTaskVariablesQuery,
 } from "../../tasks/hooks/useTasksQueries";
 import type { WorkflowTask } from "../../tasks/types/tasks.types";
+import { isApprovalTask } from "../../tasks/utils/taskTypeClassifier";
 import {
   ApprovalDecisionModal,
   type ApprovalActionType,
@@ -96,14 +98,14 @@ export function ApprovalsPage() {
   const { data: definitionsData } = useDefinitionsQuery({ size: 100 });
 
   const mineParams = {
-    start: (minePage - 1) * minePageSize,
-    size: minePageSize,
+    start: 0,
+    size: 100,
     ...(appliedSearch ? { name: appliedSearch } : {}),
   };
 
   const availableParams = {
-    start: (availablePage - 1) * availablePageSize,
-    size: availablePageSize,
+    start: 0,
+    size: 100,
     ...(appliedSearch ? { name: appliedSearch } : {}),
   };
 
@@ -120,6 +122,28 @@ export function ApprovalsPage() {
     refetch: refetchAvailable,
     isFetching: fetchingAvailable,
   } = useAvailableTasksQuery(availableParams);
+
+  // Filtrar estrictamente solo tareas de aprobación / VoBo / decisión
+  const allFilteredMine = useMemo(() => {
+    return (mineData?.data ?? []).filter(isApprovalTask);
+  }, [mineData?.data]);
+
+  const allFilteredAvailable = useMemo(() => {
+    return (availableData?.data ?? []).filter(isApprovalTask);
+  }, [availableData?.data]);
+
+  const myPendingCount = allFilteredMine.length;
+  const availablePendingCount = allFilteredAvailable.length;
+
+  const paginatedMine = useMemo(() => {
+    const start = (minePage - 1) * minePageSize;
+    return allFilteredMine.slice(start, start + minePageSize);
+  }, [allFilteredMine, minePage, minePageSize]);
+
+  const paginatedAvailable = useMemo(() => {
+    const start = (availablePage - 1) * availablePageSize;
+    return allFilteredAvailable.slice(start, start + availablePageSize);
+  }, [allFilteredAvailable, availablePage, availablePageSize]);
 
   const claimMutation = useClaimTaskMutation();
 
@@ -176,31 +200,14 @@ export function ApprovalsPage() {
 
   // Acción directa para aprobar/rechazar/observar
   const handleDirectDecision = useCallback(
-    async (task: WorkflowTask, action: ApprovalActionType) => {
-      try {
-        if (task.assignee !== user?.id) {
-          await claimMutation.mutateAsync(task.id);
-          refetchMine();
-          refetchAvailable();
-        }
-        setDecisionModal({
-          open: true,
-          task,
-          action,
-        });
-      } catch (err: unknown) {
-        const axErr = err as {
-          response?: { data?: { message?: string } };
-          message?: string;
-        };
-        message.error(
-          axErr.response?.data?.message ||
-            axErr.message ||
-            "Error al preparar la aprobación",
-        );
-      }
+    (task: WorkflowTask, action: ApprovalActionType) => {
+      setDecisionModal({
+        open: true,
+        task,
+        action,
+      });
     },
-    [user, claimMutation, refetchMine, refetchAvailable],
+    [],
   );
 
   const openAntecedents = (task: WorkflowTask) => {
@@ -209,10 +216,6 @@ export function ApprovalsPage() {
       task,
     });
   };
-
-  // Contadores
-  const myPendingCount = mineData?.total ?? 0;
-  const availablePendingCount = availableData?.total ?? 0;
 
   // Columnas para tareas asignadas al usuario
   const mineColumns: ColumnsType<WorkflowTask> = useMemo(
@@ -375,14 +378,23 @@ export function ApprovalsPage() {
         ),
       },
       {
-        title: "Estado",
+        title: "Estado / Asignación",
         key: "status",
-        width: 180,
-        render: () => (
-          <Tag color="blue" icon={<InboxOutlined />} style={{ fontSize: 12 }}>
-            Disponible para evaluar
-          </Tag>
-        ),
+        width: 190,
+        render: (_, record) => {
+          if (record.assignee) {
+            return (
+              <Tag color="geekblue" icon={<UserOutlined />} style={{ fontSize: 12 }}>
+                Asignado: @{record.assignee}
+              </Tag>
+            );
+          }
+          return (
+            <Tag color="blue" icon={<InboxOutlined />} style={{ fontSize: 12 }}>
+              Disponible para evaluar
+            </Tag>
+          );
+        },
       },
       {
         title: "Acciones",
@@ -426,20 +438,32 @@ export function ApprovalsPage() {
               </>
             )}
 
-            <Button
-              type={isAdmin ? "default" : "primary"}
-              size="small"
-              icon={<ThunderboltOutlined />}
-              loading={claimMutation.isPending}
-              onClick={() => handleClaim(record)}
-            >
-              Tomar para Evaluar
-            </Button>
+            {record.assignee !== user?.id &&
+              record.assignee !== user?.username && (
+                <Button
+                  type={isAdmin ? "default" : "primary"}
+                  size="small"
+                  icon={<ThunderboltOutlined />}
+                  loading={claimMutation.isPending}
+                  onClick={() => handleClaim(record)}
+                >
+                  {record.assignee ? "Reasignarme" : "Tomar para Evaluar"}
+                </Button>
+              )}
           </Space>
         ),
       },
     ],
-    [definitionsData, availableProcesses, claimMutation.isPending, handleClaim, isAdmin, handleDirectDecision],
+    [
+      definitionsData,
+      availableProcesses,
+      claimMutation.isPending,
+      handleClaim,
+      isAdmin,
+      handleDirectDecision,
+      user?.id,
+      user?.username,
+    ],
   );
 
   return (
@@ -595,7 +619,7 @@ export function ApprovalsPage() {
                 <Table<WorkflowTask>
                   rowKey="id"
                   columns={mineColumns}
-                  dataSource={mineData?.data ?? []}
+                  dataSource={paginatedMine}
                   loading={loadingMine}
                   scroll={{ x: 860 }}
                   style={{ marginBottom: 16 }}
@@ -627,7 +651,7 @@ export function ApprovalsPage() {
               key: "available",
               label: (
                 <Space>
-                  <span>Disponibles para Evaluar</span>
+                  <span>{isAdmin ? "Todas las Solicitudes en Curso" : "Disponibles para Evaluar"}</span>
                   <Badge
                     count={availablePendingCount}
                     overflowCount={99}
@@ -639,7 +663,7 @@ export function ApprovalsPage() {
                 <Table<WorkflowTask>
                   rowKey="id"
                   columns={availableColumns}
-                  dataSource={availableData?.data ?? []}
+                  dataSource={paginatedAvailable}
                   loading={loadingAvailable}
                   scroll={{ x: 800 }}
                   style={{ marginBottom: 16 }}

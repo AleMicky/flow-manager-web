@@ -42,6 +42,10 @@ import {
   useMyTasksQuery,
 } from "../tasks/hooks/useTasksQueries";
 import type { WorkflowTask } from "../tasks/types/tasks.types";
+import {
+  isApprovalTask,
+  isOperationalTask,
+} from "../tasks/utils/taskTypeClassifier";
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -63,11 +67,11 @@ export function Dashboard() {
   });
 
   const { data: myTasksData, isLoading: loadingMyTasks } = useMyTasksQuery({
-    size: 5,
+    size: 50,
   });
 
   const { data: availableTasksData } = useAvailableTasksQuery({
-    size: 5,
+    size: 50,
   });
 
   const { data: definitionsData } = useDefinitionsQuery({
@@ -77,8 +81,18 @@ export function Dashboard() {
   const { data: availableProcesses } = useAvailableProcessesQuery();
 
   const totalInstances = instancesData?.total ?? 0;
-  const totalMyTasks = myTasksData?.total ?? 0;
-  const totalAvailableTasks = availableTasksData?.total ?? 0;
+  const operationalTasks = useMemo(
+    () => (myTasksData?.data || []).filter(isOperationalTask),
+    [myTasksData?.data],
+  );
+  const approvalTasks = useMemo(() => {
+    const mine = (myTasksData?.data || []).filter(isApprovalTask);
+    const avail = (availableTasksData?.data || []).filter(isApprovalTask);
+    return [...mine, ...avail];
+  }, [myTasksData?.data, availableTasksData?.data]);
+
+  const totalMyTasks = operationalTasks.length;
+  const totalAvailableTasks = approvalTasks.length;
   const totalProcesses = definitionsData?.total ?? 0;
 
   const todayStr = useMemo(
@@ -284,7 +298,7 @@ export function Dashboard() {
             style={{ borderRadius: 10, cursor: "pointer", borderLeft: "4px solid #f59e0b" }}
           >
             <Statistic
-              title="Mis Tareas Asignadas"
+              title="Mis Tareas Operativas"
               value={totalMyTasks}
               prefix={<ClockCircleOutlined style={{ color: "#f59e0b" }} />}
               suffix={<ArrowRightOutlined style={{ fontSize: 12, color: "#94a3b8" }} />}
@@ -299,7 +313,7 @@ export function Dashboard() {
             style={{ borderRadius: 10, cursor: "pointer", borderLeft: "4px solid #10b981" }}
           >
             <Statistic
-              title="Aprobaciones Disponibles"
+              title="Aprobaciones y VoBos"
               value={totalAvailableTasks}
               prefix={<CheckSquareOutlined style={{ color: "#10b981" }} />}
               suffix={<ArrowRightOutlined style={{ fontSize: 12, color: "#94a3b8" }} />}
@@ -354,7 +368,7 @@ export function Dashboard() {
               </Empty>
             ) : (
               <Table
-                dataSource={myTasksData?.data || []}
+                dataSource={operationalTasks}
                 columns={taskColumns}
                 rowKey="id"
                 pagination={false}
