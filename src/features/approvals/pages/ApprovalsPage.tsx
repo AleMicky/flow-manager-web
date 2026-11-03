@@ -1,5 +1,6 @@
 import {
   ApartmentOutlined,
+  CheckCircleOutlined,
   CheckOutlined,
   ClockCircleOutlined,
   CloseOutlined,
@@ -10,7 +11,6 @@ import {
   ReloadOutlined,
   SearchOutlined,
   ThunderboltOutlined,
-  UserOutlined,
 } from "@ant-design/icons";
 import {
   Badge,
@@ -55,11 +55,20 @@ const { Title, Paragraph, Text } = Typography;
 
 export function ApprovalsPage() {
   const { user } = useAuthStore();
+  const isAdmin = Boolean(
+    user?.roles?.some((r) =>
+      ["workflow-admin", "admin", "realm-admin", "superadmin"].includes(
+        r.toLowerCase(),
+      ),
+    ),
+  );
+
   const [activeTab, setActiveTab] = useState<"mine" | "available">("mine");
   const [minePage, setMinePage] = useState(1);
   const [minePageSize, setMinePageSize] = useState(10);
   const [availablePage, setAvailablePage] = useState(1);
   const [availablePageSize, setAvailablePageSize] = useState(10);
+
   const [searchInput, setSearchInput] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
 
@@ -138,7 +147,7 @@ export function ApprovalsPage() {
     async (task: WorkflowTask) => {
       try {
         await claimMutation.mutateAsync(task.id);
-        message.success(`Tarea "${task.name}" tomada para tu revisión`);
+        message.success(`Solicitud "${task.name}" tomada para tu revisión`);
         refetchMine();
         refetchAvailable();
         setActiveTab("mine");
@@ -164,6 +173,35 @@ export function ApprovalsPage() {
       action,
     });
   };
+
+  // Acción directa para aprobar/rechazar/observar
+  const handleDirectDecision = useCallback(
+    async (task: WorkflowTask, action: ApprovalActionType) => {
+      try {
+        if (task.assignee !== user?.id) {
+          await claimMutation.mutateAsync(task.id);
+          refetchMine();
+          refetchAvailable();
+        }
+        setDecisionModal({
+          open: true,
+          task,
+          action,
+        });
+      } catch (err: unknown) {
+        const axErr = err as {
+          response?: { data?: { message?: string } };
+          message?: string;
+        };
+        message.error(
+          axErr.response?.data?.message ||
+            axErr.message ||
+            "Error al preparar la aprobación",
+        );
+      }
+    },
+    [user, claimMutation, refetchMine, refetchAvailable],
+  );
 
   const openAntecedents = (task: WorkflowTask) => {
     setAntecedentsDrawer({
@@ -349,7 +387,7 @@ export function ApprovalsPage() {
       {
         title: "Acciones",
         key: "actions",
-        width: 260,
+        width: isAdmin ? 360 : 260,
         fixed: "right",
         render: (_, record) => (
           <Space size="small">
@@ -360,8 +398,36 @@ export function ApprovalsPage() {
             >
               Antecedentes
             </Button>
+
+            {isAdmin && (
+              <>
+                <Tooltip title="Aprobar solicitud">
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<CheckOutlined />}
+                    style={{ backgroundColor: "#16a34a", borderColor: "#16a34a" }}
+                    onClick={() => handleDirectDecision(record, "APPROVE")}
+                  >
+                    Aprobar
+                  </Button>
+                </Tooltip>
+
+                <Tooltip title="Rechazar solicitud">
+                  <Button
+                    danger
+                    size="small"
+                    icon={<CloseOutlined />}
+                    onClick={() => handleDirectDecision(record, "REJECT")}
+                  >
+                    Rechazar
+                  </Button>
+                </Tooltip>
+              </>
+            )}
+
             <Button
-              type="primary"
+              type={isAdmin ? "default" : "primary"}
               size="small"
               icon={<ThunderboltOutlined />}
               loading={claimMutation.isPending}
@@ -373,7 +439,7 @@ export function ApprovalsPage() {
         ),
       },
     ],
-    [definitionsData, availableProcesses, claimMutation.isPending, handleClaim],
+    [definitionsData, availableProcesses, claimMutation.isPending, handleClaim, isAdmin, handleDirectDecision],
   );
 
   return (
@@ -400,26 +466,30 @@ export function ApprovalsPage() {
 
         <Space wrap>
           <Button
-            icon={<ReloadOutlined spin={fetchingMine || fetchingAvailable} />}
+            icon={
+              <ReloadOutlined
+                spin={activeTab === "mine" ? fetchingMine : fetchingAvailable}
+              />
+            }
             onClick={() => {
-              refetchMine();
-              refetchAvailable();
+              if (activeTab === "mine") refetchMine();
+              else refetchAvailable();
             }}
           >
-            Actualizar Bandeja
+            Actualizar
           </Button>
         </Space>
       </div>
 
-      {/* Tarjetas KPI de Resumen */}
+      {/* Tarjetas KPI de Estado */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={8}>
           <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
             <Statistic
               title={
                 <Space>
-                  <ExclamationCircleOutlined style={{ color: "#d97706" }} />
-                  <Text type="secondary">Esperando Mi Visto Bueno</Text>
+                  <ClockCircleOutlined style={{ color: "#d97706" }} />
+                  <Text type="secondary">Pendientes de Mi Aprobación</Text>
                 </Space>
               }
               value={myPendingCount}
@@ -427,13 +497,14 @@ export function ApprovalsPage() {
             />
           </Card>
         </Col>
+
         <Col xs={24} sm={8}>
           <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
             <Statistic
               title={
                 <Space>
                   <InboxOutlined style={{ color: "#3b82f6" }} />
-                  <Text type="secondary">Disponibles en mi Comité / Grupo</Text>
+                  <Text type="secondary">Disponibles para Evaluar</Text>
                 </Space>
               }
               value={availablePendingCount}
@@ -441,12 +512,13 @@ export function ApprovalsPage() {
             />
           </Card>
         </Col>
+
         <Col xs={24} sm={8}>
           <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
             <Statistic
               title={
                 <Space>
-                  <UserOutlined style={{ color: "#10b981" }} />
+                  <CheckCircleOutlined style={{ color: "#10b981" }} />
                   <Text type="secondary">Revisor en Sesión</Text>
                 </Space>
               }
@@ -469,7 +541,7 @@ export function ApprovalsPage() {
         <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
           <Space wrap size="middle">
             <Input
-              placeholder="Buscar por nombre de paso o solicitud..."
+              placeholder="Buscar por nombre de paso o trámite..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
               onPressEnter={handleSearch}
@@ -487,7 +559,9 @@ export function ApprovalsPage() {
 
           <Text type="secondary" style={{ fontSize: 13 }}>
             Total pendientes en bandeja:{" "}
-            <Text strong>{activeTab === "mine" ? myPendingCount : availablePendingCount}</Text>
+            <Text strong>
+              {activeTab === "mine" ? myPendingCount : availablePendingCount}
+            </Text>
           </Text>
         </Space>
       </Card>
@@ -597,68 +671,48 @@ export function ApprovalsPage() {
         />
       </Card>
 
-      {/* Modal de Decisión de Aprobación / Rechazo */}
+      {/* Modal de Decisión de Aprobación */}
       <ApprovalDecisionModal
         open={decisionModal.open}
         task={decisionModal.task}
         action={decisionModal.action}
-        onClose={() => setDecisionModal({ open: false, task: null, action: "APPROVE" })}
+        onClose={() =>
+          setDecisionModal({
+            open: false,
+            task: null,
+            action: "APPROVE",
+          })
+        }
         onSuccess={() => {
           refetchMine();
           refetchAvailable();
         }}
       />
 
-      {/* Drawer de Inspección de Antecedentes de la Solicitud */}
+      {/* Drawer para inspeccionar antecedentes de la solicitud */}
       <Drawer
         title={
           <Space>
-            <FileSearchOutlined style={{ color: "#2563eb" }} />
+            <FileSearchOutlined style={{ color: "#d97706" }} />
             <span>Antecedentes y Documentos de la Solicitud</span>
           </Space>
         }
         placement="right"
         size={680}
         open={antecedentsDrawer.open}
-        onClose={() => setAntecedentsDrawer({ open: false, task: null })}
-        extra={
-          antecedentsDrawer.task && (
-            <Space>
-              <Button
-                type="primary"
-                size="small"
-                icon={<CheckOutlined />}
-                style={{ backgroundColor: "#16a34a", borderColor: "#16a34a" }}
-                onClick={() => {
-                  const task = antecedentsDrawer.task;
-                  setAntecedentsDrawer({ open: false, task: null });
-                  if (task) openDecisionModal(task, "APPROVE");
-                }}
-              >
-                Aprobar
-              </Button>
-              <Button
-                danger
-                size="small"
-                icon={<CloseOutlined />}
-                onClick={() => {
-                  const task = antecedentsDrawer.task;
-                  setAntecedentsDrawer({ open: false, task: null });
-                  if (task) openDecisionModal(task, "REJECT");
-                }}
-              >
-                Rechazar
-              </Button>
-            </Space>
-          )
+        onClose={() =>
+          setAntecedentsDrawer({
+            open: false,
+            task: null,
+          })
         }
       >
         {loadingVariables ? (
           <div style={{ textAlign: "center", padding: "40px 0" }}>
-            <Spin description="Cargando antecedentes de la solicitud..." />
+            <Spin description="Cargando antecedentes..." />
           </div>
         ) : (
-          <TaskAntecedentsViewer variables={drawerVariables} defaultExpanded={true} />
+          <TaskAntecedentsViewer variables={drawerVariables} defaultExpanded />
         )}
       </Drawer>
     </div>

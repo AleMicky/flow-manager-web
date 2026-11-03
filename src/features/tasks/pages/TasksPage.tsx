@@ -49,6 +49,14 @@ const { Title, Paragraph, Text } = Typography;
 
 export function TasksPage() {
   const { user } = useAuthStore();
+  const isAdmin = Boolean(
+    user?.roles?.some((r) =>
+      ["workflow-admin", "admin", "realm-admin", "superadmin"].includes(
+        r.toLowerCase(),
+      ),
+    ),
+  );
+
   const [activeTab, setActiveTab] = useState<"mine" | "available">("mine");
   const [minePage, setMinePage] = useState(1);
   const [minePageSize, setMinePageSize] = useState(10);
@@ -128,10 +136,9 @@ export function TasksPage() {
     async (taskId: string) => {
       try {
         await claimMutation.mutateAsync(taskId);
-        message.success("Tarea tomada para tu gestión. Ahora está en 'Mis Tareas'");
+        message.success("Has tomado la tarea exitosamente");
         refetchMine();
         refetchAvailable();
-        setActiveTab("mine");
       } catch (err: unknown) {
         const axErr = err as {
           response?: { data?: { message?: string } };
@@ -140,7 +147,7 @@ export function TasksPage() {
         message.error(
           axErr.response?.data?.message ||
             axErr.message ||
-            "Error al tomar la tarea",
+            "Error al reclamar la tarea",
         );
       }
     },
@@ -151,7 +158,7 @@ export function TasksPage() {
     async (taskId: string) => {
       try {
         await unclaimMutation.mutateAsync(taskId);
-        message.success("Tarea liberada. Ahora está disponible para el equipo");
+        message.success("La tarea ha sido liberada para el equipo");
         refetchMine();
         refetchAvailable();
       } catch (err: unknown) {
@@ -169,7 +176,35 @@ export function TasksPage() {
     [unclaimMutation, refetchMine, refetchAvailable],
   );
 
-  // Columnas amigables para el usuario final (SIN IDs técnicos en pantalla)
+  // Acción directa de resolución (si es admin o responsable, la toma y la completa directamente)
+  const handleDirectComplete = useCallback(
+    async (task: WorkflowTask) => {
+      try {
+        if (task.assignee !== user?.id) {
+          await claimMutation.mutateAsync(task.id);
+          refetchMine();
+          refetchAvailable();
+        }
+        setCompleteModal({
+          open: true,
+          task,
+        });
+      } catch (err: unknown) {
+        const axErr = err as {
+          response?: { data?: { message?: string } };
+          message?: string;
+        };
+        message.error(
+          axErr.response?.data?.message ||
+            axErr.message ||
+            "Error al iniciar la gestión de la tarea",
+        );
+      }
+    },
+    [user, claimMutation, refetchMine, refetchAvailable],
+  );
+
+  // Columnas comunes
   const commonColumns: ColumnsType<WorkflowTask> = useMemo(
     () => [
       {
@@ -177,38 +212,38 @@ export function TasksPage() {
         dataIndex: "name",
         key: "name",
         render: (name: string, record) => (
-          <Space direction="vertical" size={2}>
+          <div>
             <Text strong style={{ fontSize: 13, color: "#1e293b" }}>
-              {name || "Actividad pendiente"}
+              {name || "Actividad sin nombre"}
             </Text>
             {record.description && (
               <Paragraph
                 type="secondary"
                 ellipsis={{ rows: 1 }}
-                style={{ margin: 0, fontSize: 12, color: "#64748b" }}
+                style={{ margin: 0, fontSize: 12 }}
               >
                 {record.description}
               </Paragraph>
             )}
-          </Space>
+          </div>
         ),
       },
       {
-        title: "Trámite / Proceso Relacionado",
+        title: "Trámite / Proceso",
         dataIndex: "processDefinitionId",
         key: "processDefinitionId",
-        render: (defId: string | null) => {
+        render: (defId: string) => {
           const friendlyName = getProcessFriendlyName(
             defId,
             definitionsData?.data,
             availableProcesses,
           );
           return (
-            <Space size="small">
-              <ApartmentOutlined style={{ color: "#3b82f6" }} />
-              <Text strong style={{ fontSize: 13, color: "#334155" }}>
+            <Space>
+              <Tag color="cyan" style={{ fontSize: 12, padding: "2px 8px" }}>
+                <ApartmentOutlined style={{ marginRight: 4 }} />
                 {friendlyName}
-              </Text>
+              </Tag>
             </Space>
           );
         },
@@ -217,18 +252,18 @@ export function TasksPage() {
         title: "Prioridad",
         dataIndex: "priority",
         key: "priority",
-        width: 120,
+        width: 110,
         render: (priority: number) => {
-          if (priority > 50) return <Tag color="red">Alta</Tag>;
-          if (priority === 50) return <Tag color="blue">Normal</Tag>;
-          return <Tag color="default">Baja</Tag>;
+          if (priority >= 75) return <Tag color="error">Urgente</Tag>;
+          if (priority >= 50) return <Tag color="warning">Media</Tag>;
+          return <Tag color="default">Normal</Tag>;
         },
       },
       {
-        title: "Fecha de Asignación",
+        title: "Asignada el",
         dataIndex: "createTime",
         key: "createTime",
-        width: 180,
+        width: 170,
         render: (date: string) => (
           <Space size="small">
             <ClockCircleOutlined style={{ color: "#94a3b8" }} />
@@ -242,6 +277,7 @@ export function TasksPage() {
     [definitionsData, availableProcesses],
   );
 
+  // Columnas para mis tareas
   const mineColumns: ColumnsType<WorkflowTask> = useMemo(
     () => [
       ...commonColumns,
@@ -304,13 +340,14 @@ export function TasksPage() {
     [commonColumns, unclaimMutation.isPending, handleUnclaim],
   );
 
+  // Columnas para tareas disponibles en cola
   const availableColumns: ColumnsType<WorkflowTask> = useMemo(
     () => [
       ...commonColumns,
       {
         title: "Acciones",
         key: "actions",
-        width: 200,
+        width: isAdmin ? 280 : 200,
         fixed: "right",
         render: (_, record) => (
           <Space size="small">
@@ -323,6 +360,18 @@ export function TasksPage() {
             >
               Tomar Tarea
             </Button>
+
+            {isAdmin && (
+              <Button
+                type="primary"
+                size="small"
+                style={{ backgroundColor: "#16a34a", borderColor: "#16a34a" }}
+                icon={<CheckCircleOutlined />}
+                onClick={() => handleDirectComplete(record)}
+              >
+                Completar
+              </Button>
+            )}
 
             <Button
               size="small"
@@ -341,7 +390,7 @@ export function TasksPage() {
         ),
       },
     ],
-    [commonColumns, claimMutation.isPending, handleClaim],
+    [commonColumns, claimMutation.isPending, handleClaim, isAdmin, handleDirectComplete],
   );
 
   const myCount = mineData?.total ?? 0;
@@ -402,6 +451,7 @@ export function TasksPage() {
             />
           </Card>
         </Col>
+
         <Col xs={24} sm={8}>
           <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
             <Statistic
@@ -416,6 +466,7 @@ export function TasksPage() {
             />
           </Card>
         </Col>
+
         <Col xs={24} sm={8}>
           <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
             <Statistic
@@ -461,7 +512,8 @@ export function TasksPage() {
           </Space>
 
           <Text type="secondary" style={{ fontSize: 13 }}>
-            Tareas encontradas: <Text strong>{activeTab === "mine" ? myCount : availableCount}</Text>
+            Tareas encontradas:{" "}
+            <Text strong>{activeTab === "mine" ? myCount : availableCount}</Text>
           </Text>
         </Space>
       </Card>
@@ -564,7 +616,7 @@ export function TasksPage() {
                     showSizeChanger: true,
                     pageSizeOptions: ["10", "20", "50"],
                     showTotal: (total, range) =>
-                      `${range[0]}-${range[1]} de ${total} disponibles`,
+                      `${range[0]}-${range[1]} de ${total} tareas`,
                   }}
                   onChange={(p: TablePaginationConfig) => {
                     if (p.current) setAvailablePage(p.current);
@@ -581,24 +633,38 @@ export function TasksPage() {
       <CompleteTaskModal
         open={completeModal.open}
         task={completeModal.task}
-        onClose={() => setCompleteModal({ open: false, task: null })}
+        onClose={() =>
+          setCompleteModal({
+            open: false,
+            task: null,
+          })
+        }
         onSuccess={() => {
           refetchMine();
           refetchAvailable();
         }}
       />
 
-      {/* Drawer de detalle de tarea */}
+      {/* Drawer de detalle */}
       <TaskDetailDrawer
         open={detailDrawer.open}
         taskId={detailDrawer.taskId}
         isMyTask={detailDrawer.isMyTask}
-        onClose={() => setDetailDrawer({ open: false, taskId: null })}
-        onClaim={(tId) => handleClaim(tId)}
-        onUnclaim={(tId) => handleUnclaim(tId)}
-        onComplete={(tId) => {
-          const t = mineData?.data?.find((item) => item.id === tId) ?? null;
-          setCompleteModal({ open: true, task: t });
+        onClose={() =>
+          setDetailDrawer({
+            open: false,
+            taskId: null,
+          })
+        }
+        onComplete={(taskId: string) => {
+          setDetailDrawer({ open: false, taskId: null });
+          const found =
+            mineData?.data.find((t) => t.id === taskId) ||
+            availableData?.data.find((t) => t.id === taskId) ||
+            null;
+          if (found) {
+            setCompleteModal({ open: true, task: found });
+          }
         }}
       />
     </div>

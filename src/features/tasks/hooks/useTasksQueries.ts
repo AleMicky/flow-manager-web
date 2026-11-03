@@ -7,6 +7,18 @@ import type {
 } from "../types/tasks.types";
 
 /**
+ * Hook para consultar todas las tareas del sistema (modo supervisión admin).
+ */
+export function useAllTasksQuery(params?: QueryTasksParams, enabled = true) {
+  return useQuery({
+    queryKey: [...TASKS_QUERY_KEYS.all, "global", params ?? {}] as const,
+    queryFn: () => tasksService.getAll(params),
+    enabled,
+    staleTime: 15_000,
+  });
+}
+
+/**
  * Hook para consultar mis tareas asignadas (/workflow/tasks/mine).
  */
 export function useMyTasksQuery(params?: QueryTasksParams) {

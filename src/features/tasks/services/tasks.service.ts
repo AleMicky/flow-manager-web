@@ -10,6 +10,20 @@ import type {
 
 export const tasksService = {
   /**
+   * Obtiene la lista global de todas las tareas del sistema (modo supervisión admin).
+   * Endpoint: GET /api/workflow/tasks
+   */
+  async getAll(
+    params?: QueryTasksParams,
+  ): Promise<FlowablePage<WorkflowTask>> {
+    const response = await api.get<FlowablePage<WorkflowTask>>(
+      TASKS_ENDPOINTS.BASE,
+      { params },
+    );
+    return response.data;
+  },
+
+  /**
    * Obtiene la lista de tareas asignadas al usuario autenticado.
    * Endpoint: GET /api/workflow/tasks/mine
    */
