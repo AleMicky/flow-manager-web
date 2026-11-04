@@ -4,9 +4,11 @@ import {
   CheckOutlined,
   ClockCircleOutlined,
   CloseOutlined,
+  CrownOutlined,
   ExclamationCircleOutlined,
   FileDoneOutlined,
   FileSearchOutlined,
+  FilterOutlined,
   InboxOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -14,19 +16,16 @@ import {
   UserOutlined,
 } from "@ant-design/icons";
 import {
-  Badge,
   Button,
   Card,
-  Col,
   Drawer,
   Empty,
   Input,
-  Row,
+  Segmented,
+  Select,
   Space,
   Spin,
-  Statistic,
   Table,
-  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -53,33 +52,40 @@ import {
   type ApprovalActionType,
 } from "../components/ApprovalDecisionModal";
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Text } = Typography;
 
 export function ApprovalsPage() {
   const { user } = useAuthStore();
-  const isAdmin = Boolean(
-    user?.roles?.some((r) =>
-      [
-        "workflow-admin",
-        "admin",
-        "realm-admin",
-        "superadmin",
-        "administrador",
-      ].includes(r.toLowerCase()),
-    ) ||
-      ["admin", "administrador"].includes(
-        (user?.username || "").toLowerCase(),
-      ),
-  );
 
-  const [activeTab, setActiveTab] = useState<"mine" | "available">("mine");
-  const [minePage, setMinePage] = useState(1);
-  const [minePageSize, setMinePageSize] = useState(10);
-  const [availablePage, setAvailablePage] = useState(1);
-  const [availablePageSize, setAvailablePageSize] = useState(10);
+  const isAdmin = useMemo(() => {
+    return Boolean(
+      user?.roles?.some((r) =>
+        [
+          "workflow-admin",
+          "admin",
+          "realm-admin",
+          "superadmin",
+          "administrador",
+        ].includes(r.toLowerCase()),
+      ) ||
+        ["admin", "administrador"].includes(
+          (user?.username || "").toLowerCase(),
+        ),
+    );
+  }, [user]);
+
+  // Por defecto "all" para que muestre todo lo que el backend autoriza al usuario (incluyendo rol admin y roles asignados)
+  const [viewScope, setViewScope] = useState<"all" | "mine">("all");
+
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const [searchInput, setSearchInput] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
+  const [processFilter, setProcessFilter] = useState<string | undefined>(
+    undefined,
+  );
+  const [assigneeFilter, setAssigneeFilter] = useState("");
 
   // Modales y Drawers
   const [decisionModal, setDecisionModal] = useState<{
@@ -100,17 +106,14 @@ export function ApprovalsPage() {
     task: null,
   });
 
-  // Consultas
+  // Consultas de catálogo
   const { data: availableProcesses } = useAvailableProcessesQuery();
-  const { data: definitionsData } = useDefinitionsQuery({ size: 100, latest: true });
-
-  const mineParams = {
-    start: 0,
+  const { data: definitionsData } = useDefinitionsQuery({
     size: 100,
-    ...(appliedSearch ? { name: appliedSearch } : {}),
-  };
+    latest: true,
+  });
 
-  const availableParams = {
+  const queryParams = {
     start: 0,
     size: 100,
     ...(appliedSearch ? { name: appliedSearch } : {}),
@@ -121,38 +124,117 @@ export function ApprovalsPage() {
     isLoading: loadingMine,
     refetch: refetchMine,
     isFetching: fetchingMine,
-  } = useMyTasksQuery(mineParams);
+  } = useMyTasksQuery(queryParams);
 
   const {
     data: availableData,
     isLoading: loadingAvailable,
     refetch: refetchAvailable,
     isFetching: fetchingAvailable,
-  } = useAvailableTasksQuery(availableParams);
-
-  // Filtrar estrictamente solo tareas de aprobación / VoBo / decisión
-  const allFilteredMine = useMemo(() => {
-    return (mineData?.data ?? []).filter(isApprovalTask);
-  }, [mineData?.data]);
-
-  const allFilteredAvailable = useMemo(() => {
-    return (availableData?.data ?? []).filter(isApprovalTask);
-  }, [availableData?.data]);
-
-  const myPendingCount = allFilteredMine.length;
-  const availablePendingCount = allFilteredAvailable.length;
-
-  const paginatedMine = useMemo(() => {
-    const start = (minePage - 1) * minePageSize;
-    return allFilteredMine.slice(start, start + minePageSize);
-  }, [allFilteredMine, minePage, minePageSize]);
-
-  const paginatedAvailable = useMemo(() => {
-    const start = (availablePage - 1) * availablePageSize;
-    return allFilteredAvailable.slice(start, start + availablePageSize);
-  }, [allFilteredAvailable, availablePage, availablePageSize]);
+  } = useAvailableTasksQuery(queryParams);
 
   const claimMutation = useClaimTaskMutation();
+
+  // Identificadores del usuario en sesión
+  const userTokens = useMemo(() => {
+    return new Set(
+      [user?.id, user?.username, user?.email]
+        .filter((v): v is string => Boolean(v))
+        .map((v) => v.toLowerCase()),
+    );
+  }, [user?.id, user?.username, user?.email]);
+
+  // Todas las tareas de aprobación devueltas por /workflow/tasks/mine (incluye asignadas por usuario, por rol/grupo y rol admin)
+  const allAuthorizedApprovals = useMemo(() => {
+    const map = new Map<string, WorkflowTask>();
+    for (const t of mineData?.data ?? []) {
+      if (isApprovalTask(t)) {
+        map.set(t.id, t);
+      }
+    }
+    if (isAdmin) {
+      for (const t of availableData?.data ?? []) {
+        if (isApprovalTask(t)) {
+          map.set(t.id, t);
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [mineData?.data, availableData?.data, isAdmin]);
+
+  // Tareas con assignee directo al usuario o sin assignee de otro usuario
+  const strictlyMineApprovals = useMemo(() => {
+    return allAuthorizedApprovals.filter((task) => {
+      if (!task.assignee) return true;
+      return userTokens.has(task.assignee.toLowerCase());
+    });
+  }, [allAuthorizedApprovals, userTokens]);
+
+  // Detectar si el usuario tiene visibilidad admin (por JWT o porque el backend le devuelve tareas de otros usuarios por su rol en Keycloak)
+  const hasAdminVisibility = useMemo(() => {
+    if (isAdmin) return true;
+    return allAuthorizedApprovals.some(
+      (t) => t.assignee && !userTokens.has(t.assignee.toLowerCase()),
+    );
+  }, [isAdmin, allAuthorizedApprovals, userTokens]);
+
+  // Aplicar filtros de UI (proceso, asignado y selector Como Admin / Como Asignado)
+  const activeList = useMemo(() => {
+    const source =
+      hasAdminVisibility && viewScope === "mine"
+        ? strictlyMineApprovals
+        : allAuthorizedApprovals;
+    const assigneeQuery = assigneeFilter.trim().toLowerCase();
+
+    return source.filter((task) => {
+      if (processFilter) {
+        const defKey = task.processDefinitionId?.split(":")[0] || "";
+        if (defKey !== processFilter) return false;
+      }
+
+      if (assigneeQuery) {
+        const currentAssignee = (task.assignee || "sin asignar").toLowerCase();
+        if (!currentAssignee.includes(assigneeQuery)) return false;
+      }
+
+      return true;
+    });
+  }, [
+    hasAdminVisibility,
+    viewScope,
+    strictlyMineApprovals,
+    allAuthorizedApprovals,
+    processFilter,
+    assigneeFilter,
+  ]);
+
+  const myPendingCount = strictlyMineApprovals.length;
+  const adminTotalCount = allAuthorizedApprovals.length;
+  const effectiveScope: "all" | "mine" = hasAdminVisibility ? viewScope : "mine";
+
+  const paginatedData = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return activeList.slice(start, start + pageSize);
+  }, [activeList, page, pageSize]);
+
+  // Opciones de filtro por proceso
+  const processFilterOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const def of definitionsData?.data ?? []) {
+      if (def.key && !map.has(def.key)) {
+        map.set(def.key, def.name || def.key);
+      }
+    }
+    for (const proc of availableProcesses ?? []) {
+      if (proc.key && !map.has(proc.key)) {
+        map.set(proc.key, proc.name || proc.key);
+      }
+    }
+    return Array.from(map.entries()).map(([value, label]) => ({
+      value,
+      label,
+    }));
+  }, [definitionsData?.data, availableProcesses]);
 
   // Variables y antecedentes de la tarea seleccionada en el drawer
   const { data: drawerVariables, isLoading: loadingVariables } =
@@ -162,26 +244,29 @@ export function ApprovalsPage() {
     );
 
   const handleSearch = () => {
-    setMinePage(1);
-    setAvailablePage(1);
+    setPage(1);
     setAppliedSearch(searchInput.trim());
   };
 
   const handleResetSearch = () => {
     setSearchInput("");
     setAppliedSearch("");
-    setMinePage(1);
-    setAvailablePage(1);
+    setProcessFilter(undefined);
+    setAssigneeFilter("");
+    setPage(1);
   };
+
+  const hasActiveFilters = Boolean(
+    appliedSearch || processFilter || assigneeFilter.trim(),
+  );
 
   const handleClaim = useCallback(
     async (task: WorkflowTask) => {
       try {
         await claimMutation.mutateAsync(task.id);
-        message.success(`Solicitud "${task.name}" tomada para tu revisión`);
+        message.success(`Solicitud "${task.name}" asignada a tu bandeja`);
         refetchMine();
         refetchAvailable();
-        setActiveTab("mine");
       } catch (err: unknown) {
         const axErr = err as {
           response?: { data?: { message?: string } };
@@ -197,16 +282,7 @@ export function ApprovalsPage() {
     [claimMutation, refetchMine, refetchAvailable],
   );
 
-  const openDecisionModal = (task: WorkflowTask, action: ApprovalActionType) => {
-    setDecisionModal({
-      open: true,
-      task,
-      action,
-    });
-  };
-
-  // Acción directa para aprobar/rechazar/observar
-  const handleDirectDecision = useCallback(
+  const openDecisionModal = useCallback(
     (task: WorkflowTask, action: ApprovalActionType) => {
       setDecisionModal({
         open: true,
@@ -217,20 +293,21 @@ export function ApprovalsPage() {
     [],
   );
 
-  const openAntecedents = (task: WorkflowTask) => {
+  const openAntecedents = useCallback((task: WorkflowTask) => {
     setAntecedentsDrawer({
       open: true,
       task,
     });
-  };
+  }, []);
 
-  // Columnas para tareas asignadas al usuario
-  const mineColumns: ColumnsType<WorkflowTask> = useMemo(
+  // Columnas compactas adaptadas según el filtro activo (Como Asignado vs Como Admin)
+  const columns: ColumnsType<WorkflowTask> = useMemo(
     () => [
       {
-        title: "Tipo de Trámite / Proceso",
+        title: "Trámite / Proceso",
         dataIndex: "processDefinitionId",
         key: "processDefinitionId",
+        ellipsis: true,
         render: (defId: string) => {
           const friendlyName = getProcessFriendlyName(
             defId,
@@ -238,150 +315,7 @@ export function ApprovalsPage() {
             availableProcesses,
           );
           return (
-            <Space direction="vertical" size={2}>
-              <Text strong style={{ fontSize: 13, color: "#1e293b" }}>
-                {friendlyName}
-              </Text>
-            </Space>
-          );
-        },
-      },
-      {
-        title: "Paso de Aprobación",
-        dataIndex: "name",
-        key: "name",
-        render: (name: string) => (
-          <Space>
-            <Tag color="geekblue" style={{ fontSize: 13, padding: "2px 8px" }}>
-              <ApartmentOutlined style={{ marginRight: 6 }} />
-              {name || "Revisión y Aprobación"}
-            </Tag>
-          </Space>
-        ),
-      },
-      {
-        title: "Fecha de Asignación",
-        dataIndex: "createTime",
-        key: "createTime",
-        width: 180,
-        render: (date: string) => (
-          <Space size="small">
-            <ClockCircleOutlined style={{ color: "#94a3b8" }} />
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              {date ? dayjs(date).format("DD/MM/YYYY HH:mm") : "—"}
-            </Text>
-          </Space>
-        ),
-      },
-      {
-        title: "Estado / Asignación",
-        key: "decisionStatus",
-        width: 190,
-        render: (_, record) => {
-          const isAssignedToMe =
-            record.assignee === user?.username || record.assignee === user?.id;
-          if (record.assignee && !isAssignedToMe) {
-            return (
-              <Space direction="vertical" size={2}>
-                <Tag
-                  color="geekblue"
-                  icon={<UserOutlined />}
-                  style={{ fontSize: 12 }}
-                >
-                  Asignado: @{record.assignee}
-                </Tag>
-                <Tag
-                  color="gold"
-                  icon={<ExclamationCircleOutlined />}
-                  style={{ fontSize: 11 }}
-                >
-                  Pendiente de VoBo
-                </Tag>
-              </Space>
-            );
-          }
-          return (
-            <Tag
-              color="gold"
-              icon={<ExclamationCircleOutlined />}
-              style={{ fontSize: 12 }}
-            >
-              Esperando tu visto bueno
-            </Tag>
-          );
-        },
-      },
-      {
-        title: "Acciones Ejecutivas",
-        key: "actions",
-        width: 320,
-        fixed: "right",
-        render: (_, record) => (
-          <Space size="small">
-            <Tooltip title="Ver documentos y antecedentes de la solicitud">
-              <Button
-                size="small"
-                icon={<FileSearchOutlined />}
-                onClick={() => openAntecedents(record)}
-              >
-                Antecedentes
-              </Button>
-            </Tooltip>
-
-            <Tooltip title="Aprobar solicitud y avanzar trámite">
-              <Button
-                type="primary"
-                size="small"
-                icon={<CheckOutlined />}
-                style={{ backgroundColor: "#16a34a", borderColor: "#16a34a" }}
-                onClick={() => openDecisionModal(record, "APPROVE")}
-              >
-                Aprobar
-              </Button>
-            </Tooltip>
-
-            <Tooltip title="Rechazar solicitud con motivo justificado">
-              <Button
-                danger
-                size="small"
-                icon={<CloseOutlined />}
-                onClick={() => openDecisionModal(record, "REJECT")}
-              >
-                Rechazar
-              </Button>
-            </Tooltip>
-
-            <Tooltip title="Devolver con observaciones para corrección">
-              <Button
-                size="small"
-                style={{ color: "#d97706", borderColor: "#d97706" }}
-                onClick={() => openDecisionModal(record, "OBSERVE")}
-              >
-                Observar
-              </Button>
-            </Tooltip>
-          </Space>
-        ),
-      },
-    ],
-    [definitionsData, availableProcesses, user?.username, user?.id],
-  );
-
-  // Columnas para tareas disponibles en comités o grupos
-  const availableColumns: ColumnsType<WorkflowTask> = useMemo(
-    () => [
-      {
-        title: "Tipo de Trámite / Proceso",
-        dataIndex: "processDefinitionId",
-        key: "processDefinitionId",
-        render: (defId: string) => {
-          const friendlyName = getProcessFriendlyName(
-            defId,
-            definitionsData?.data,
-            availableProcesses,
-          );
-          return (
-            <Text strong style={{ fontSize: 13, color: "#1e293b" }}>
+            <Text strong style={{ fontSize: 12, color: "#1e293b" }}>
               {friendlyName}
             </Text>
           );
@@ -391,22 +325,36 @@ export function ApprovalsPage() {
         title: "Paso de Aprobación",
         dataIndex: "name",
         key: "name",
-        render: (name: string) => (
-          <Tag color="cyan" style={{ fontSize: 13, padding: "2px 8px" }}>
-            <ApartmentOutlined style={{ marginRight: 6 }} />
-            {name || "Revisión y Aprobación"}
-          </Tag>
+        render: (name: string, record) => (
+          <Space direction="vertical" size={1}>
+            <Tag
+              color={effectiveScope === "all" ? "cyan" : "geekblue"}
+              style={{ fontSize: 11, padding: "1px 8px", margin: 0 }}
+            >
+              <ApartmentOutlined style={{ marginRight: 5 }} />
+              {name || "Revisión y Aprobación"}
+            </Tag>
+            {record.description && (
+              <Text
+                type="secondary"
+                ellipsis={{ tooltip: record.description }}
+                style={{ fontSize: 11, maxWidth: 260 }}
+              >
+                {record.description}
+              </Text>
+            )}
+          </Space>
         ),
       },
       {
-        title: "Fecha de Creación",
+        title: "Fecha",
         dataIndex: "createTime",
         key: "createTime",
-        width: 180,
+        width: 140,
         render: (date: string) => (
-          <Space size="small">
-            <ClockCircleOutlined style={{ color: "#94a3b8" }} />
-            <Text type="secondary" style={{ fontSize: 13 }}>
+          <Space size={4}>
+            <ClockCircleOutlined style={{ color: "#94a3b8", fontSize: 12 }} />
+            <Text type="secondary" style={{ fontSize: 12 }}>
               {date ? dayjs(date).format("DD/MM/YYYY HH:mm") : "—"}
             </Text>
           </Space>
@@ -414,135 +362,219 @@ export function ApprovalsPage() {
       },
       {
         title: "Estado / Asignación",
-        key: "status",
-        width: 190,
+        key: "decisionStatus",
+        width: 175,
         render: (_, record) => {
-          if (record.assignee) {
+          const isAssignedToMe = Boolean(
+            record.assignee && userTokens.has(record.assignee.toLowerCase()),
+          );
+
+          if (effectiveScope === "all") {
+            if (!record.assignee) {
+              return (
+                <Tag
+                  color="blue"
+                  icon={<InboxOutlined />}
+                  style={{ fontSize: 11, padding: "1px 8px", margin: 0 }}
+                >
+                  Sin asignar
+                </Tag>
+              );
+            }
+            if (isAssignedToMe) {
+              return (
+                <Tag
+                  color="gold"
+                  icon={<UserOutlined />}
+                  style={{ fontSize: 11, padding: "1px 8px", margin: 0 }}
+                >
+                  Asignado a mí
+                </Tag>
+              );
+            }
             return (
-              <Tag color="geekblue" icon={<UserOutlined />} style={{ fontSize: 12 }}>
-                Asignado: @{record.assignee}
+              <Tag
+                color="geekblue"
+                icon={<UserOutlined />}
+                style={{ fontSize: 11, padding: "1px 8px", margin: 0 }}
+              >
+                @{record.assignee}
               </Tag>
             );
           }
+
           return (
-            <Tag color="blue" icon={<InboxOutlined />} style={{ fontSize: 12 }}>
-              Disponible para evaluar
+            <Tag
+              color="gold"
+              icon={<ExclamationCircleOutlined />}
+              style={{ fontSize: 11, padding: "1px 8px", margin: 0 }}
+            >
+              Pendiente de tu VoBo
             </Tag>
           );
         },
       },
       {
-        title: "Acciones",
+        title: "Acciones Ejecutivas",
         key: "actions",
-        width: isAdmin ? 410 : 280,
+        width: effectiveScope === "all" ? 390 : 310,
         fixed: "right",
-        render: (_, record) => (
-          <Space size="small">
-            <Button
-              size="small"
-              icon={<FileSearchOutlined />}
-              onClick={() => openAntecedents(record)}
-            >
-              Antecedentes
-            </Button>
+        render: (_, record) => {
+          const isAssignedToMe = Boolean(
+            record.assignee && userTokens.has(record.assignee.toLowerCase()),
+          );
 
-            {isAdmin && (
-              <>
-                <Tooltip title="Aprobar solicitud">
-                  <Button
-                    type="primary"
-                    size="small"
-                    icon={<CheckOutlined />}
-                    style={{ backgroundColor: "#16a34a", borderColor: "#16a34a" }}
-                    onClick={() => handleDirectDecision(record, "APPROVE")}
-                  >
-                    Aprobar
-                  </Button>
-                </Tooltip>
-
-                <Tooltip title="Rechazar solicitud">
-                  <Button
-                    danger
-                    size="small"
-                    icon={<CloseOutlined />}
-                    onClick={() => handleDirectDecision(record, "REJECT")}
-                  >
-                    Rechazar
-                  </Button>
-                </Tooltip>
-
-                <Tooltip title="Devolver con observaciones">
-                  <Button
-                    size="small"
-                    style={{ color: "#d97706", borderColor: "#d97706" }}
-                    onClick={() => handleDirectDecision(record, "OBSERVE")}
-                  >
-                    Observar
-                  </Button>
-                </Tooltip>
-              </>
-            )}
-
-            {record.assignee !== user?.id &&
-              record.assignee !== user?.username && (
+          return (
+            <Space size={4}>
+              <Tooltip title="Ver documentos y antecedentes de la solicitud">
                 <Button
-                  type={isAdmin ? "default" : "primary"}
                   size="small"
-                  icon={<ThunderboltOutlined />}
-                  loading={claimMutation.isPending}
-                  onClick={() => handleClaim(record)}
+                  icon={<FileSearchOutlined />}
+                  onClick={() => openAntecedents(record)}
+                  style={{ fontSize: 12 }}
                 >
-                  {record.assignee ? "Reasignarme" : "Tomar para Evaluar"}
+                  Antecedentes
                 </Button>
+              </Tooltip>
+
+              <Tooltip title="Aprobar solicitud y avanzar trámite">
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<CheckOutlined />}
+                  style={{
+                    backgroundColor: "#16a34a",
+                    borderColor: "#16a34a",
+                    fontSize: 12,
+                  }}
+                  onClick={() => openDecisionModal(record, "APPROVE")}
+                >
+                  Aprobar
+                </Button>
+              </Tooltip>
+
+              <Tooltip title="Devolver con observaciones para corrección">
+                <Button
+                  size="small"
+                  style={{
+                    color: "#d97706",
+                    borderColor: "#d97706",
+                    fontSize: 12,
+                  }}
+                  onClick={() => openDecisionModal(record, "OBSERVE")}
+                >
+                  Observar
+                </Button>
+              </Tooltip>
+
+              <Tooltip title="Rechazar solicitud con motivo justificado">
+                <Button
+                  danger
+                  size="small"
+                  icon={<CloseOutlined />}
+                  style={{ fontSize: 12 }}
+                  onClick={() => openDecisionModal(record, "REJECT")}
+                >
+                  Rechazar
+                </Button>
+              </Tooltip>
+
+              {effectiveScope === "all" && !isAssignedToMe && (
+                <Tooltip
+                  title={
+                    record.assignee
+                      ? "Reasignar a mi bandeja"
+                      : "Tomar solicitud para mi evaluación"
+                  }
+                >
+                  <Button
+                    size="small"
+                    icon={<ThunderboltOutlined />}
+                    loading={claimMutation.isPending}
+                    onClick={() => handleClaim(record)}
+                    style={{ fontSize: 12 }}
+                  >
+                    {record.assignee ? "Reasignarme" : "Tomar"}
+                  </Button>
+                </Tooltip>
               )}
-          </Space>
-        ),
+            </Space>
+          );
+        },
       },
     ],
     [
-      definitionsData,
+      definitionsData?.data,
       availableProcesses,
+      effectiveScope,
+      userTokens,
+      openAntecedents,
+      openDecisionModal,
       claimMutation.isPending,
       handleClaim,
-      isAdmin,
-      handleDirectDecision,
-      user?.id,
-      user?.username,
     ],
   );
 
+  const isLoading = loadingMine || (hasAdminVisibility && loadingAvailable);
+  const isFetching = fetchingMine || (hasAdminVisibility && fetchingAvailable);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Cabecera Principal */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Cabecera Compacta */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
+          alignItems: "center",
           flexWrap: "wrap",
-          gap: 16,
+          gap: 12,
         }}
       >
         <div>
-          <Title level={2} style={{ margin: 0, display: "flex", alignItems: "center" }}>
-            <FileDoneOutlined style={{ marginRight: 10, color: "#d97706" }} />
+          <Title
+            level={4}
+            style={{
+              margin: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 18,
+            }}
+          >
+            <FileDoneOutlined style={{ color: "#d97706" }} />
             Bandeja de Aprobaciones y Vistos Buenos
+            {hasAdminVisibility && effectiveScope === "all" ? (
+              <Tag
+                color="purple"
+                icon={<CrownOutlined />}
+                style={{ fontSize: 11, fontWeight: 500, padding: "0 6px" }}
+              >
+                Modo Admin (Global)
+              </Tag>
+            ) : (
+              <Tag
+                color="gold"
+                icon={<UserOutlined />}
+                style={{ fontSize: 11, fontWeight: 500, padding: "0 6px" }}
+              >
+                Asignadas a mí
+              </Tag>
+            )}
           </Title>
-          <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
-            Toma de decisiones ejecutivas sobre solicitudes que requieren tu revisión conforme.
-          </Paragraph>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            {hasAdminVisibility && effectiveScope === "all"
+              ? "Supervisión global de todas las aprobaciones en curso y toma de decisiones ejecutivas."
+              : "Solicitudes asignadas directamente a tu usuario que requieren visto bueno o decisión ejecutiva."}
+          </Text>
         </div>
 
-        <Space wrap>
+        <Space size="small" wrap>
           <Button
-            icon={
-              <ReloadOutlined
-                spin={activeTab === "mine" ? fetchingMine : fetchingAvailable}
-              />
-            }
+            size="small"
+            icon={<ReloadOutlined spin={isFetching} />}
             onClick={() => {
-              if (activeTab === "mine") refetchMine();
-              else refetchAvailable();
+              refetchMine();
+              refetchAvailable();
             }}
           >
             Actualizar
@@ -550,193 +582,197 @@ export function ApprovalsPage() {
         </Space>
       </div>
 
-      {/* Tarjetas KPI de Estado */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={8}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
-            <Statistic
-              title={
-                <Space>
-                  <ClockCircleOutlined style={{ color: "#d97706" }} />
-                  <Text type="secondary">Pendientes de Mi Aprobación</Text>
-                </Space>
-              }
-              value={myPendingCount}
-              valueStyle={{ fontWeight: 600, color: "#d97706" }}
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} sm={8}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
-            <Statistic
-              title={
-                <Space>
-                  <InboxOutlined style={{ color: "#3b82f6" }} />
-                  <Text type="secondary">Disponibles para Evaluar</Text>
-                </Space>
-              }
-              value={availablePendingCount}
-              valueStyle={{ fontWeight: 600, color: "#3b82f6" }}
-            />
-          </Card>
-        </Col>
-
-        <Col xs={24} sm={8}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
-            <Statistic
-              title={
-                <Space>
-                  <CheckCircleOutlined style={{ color: "#10b981" }} />
-                  <Text type="secondary">Revisor en Sesión</Text>
-                </Space>
-              }
-              value={user?.name || user?.username || "Usuario"}
-              valueStyle={{ fontSize: 16, fontWeight: 600, color: "#1e293b" }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Barra de Búsqueda y Filtros */}
+      {/* Barra de Control Compacta y Unificada (Selector Admin/Asignado + KPIs Chips + Filtros) */}
       <Card
         size="small"
-        style={{
-          borderRadius: 8,
-          borderColor: "#e2e8f0",
-          background: "#ffffff",
-        }}
+        styles={{ body: { padding: "10px 14px" } }}
+        style={{ borderRadius: 8, borderColor: "#e2e8f0" }}
       >
-        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
-          <Space wrap size="middle">
-            <Input
-              placeholder="Buscar por nombre de paso o trámite..."
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              onPressEnter={handleSearch}
-              style={{ width: 300 }}
-              allowClear
-              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-            />
-            <Button type="primary" onClick={handleSearch}>
-              Buscar
-            </Button>
-            {appliedSearch && (
-              <Button onClick={handleResetSearch}>Limpiar búsqueda</Button>
-            )}
-          </Space>
+        <Space direction="vertical" size={8} style={{ width: "100%" }}>
+          {/* Fila 1: Selector de vista (si es Admin) + Chips de Resumen */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <Space size={8} wrap align="center">
+              {hasAdminVisibility && (
+                <Segmented
+                  size="small"
+                  value={effectiveScope}
+                  onChange={(val) => {
+                    setViewScope(val as "mine" | "all");
+                    setPage(1);
+                  }}
+                  options={[
+                    {
+                      label: `Como Admin (${adminTotalCount})`,
+                      value: "all",
+                      icon: <CrownOutlined />,
+                    },
+                    {
+                      label: `Como Asignado (${myPendingCount})`,
+                      value: "mine",
+                      icon: <UserOutlined />,
+                    },
+                  ]}
+                />
+              )}
 
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            Total pendientes en bandeja:{" "}
-            <Text strong>
-              {activeTab === "mine" ? myPendingCount : availablePendingCount}
+              <Tag
+                color="gold"
+                style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}
+              >
+                <ClockCircleOutlined style={{ marginRight: 4 }} />
+                Asignadas a mí: <strong>{myPendingCount}</strong>
+              </Tag>
+
+              {hasAdminVisibility && (
+                <Tag
+                  color="purple"
+                  style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}
+                >
+                  <CrownOutlined style={{ marginRight: 4 }} />
+                  Total sistema: <strong>{adminTotalCount}</strong>
+                </Tag>
+              )}
+
+              <Tag
+                color="green"
+                style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}
+              >
+                <CheckCircleOutlined style={{ marginRight: 4 }} />
+                Revisor:{" "}
+                <strong>{user?.name || user?.username || "Usuario"}</strong>
+              </Tag>
+            </Space>
+
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Mostrando: <Text strong>{activeList.length}</Text> solicitudes
             </Text>
-          </Text>
+          </div>
+
+          {/* Fila 2: Filtros de Búsqueda Compactos */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <Space size="small" wrap>
+              <Input
+                size="small"
+                placeholder="Buscar por paso de aprobación..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onPressEnter={handleSearch}
+                style={{ width: 210 }}
+                allowClear
+                prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+              />
+
+              <Select
+                size="small"
+                placeholder="Todos los tipos de trámite"
+                value={processFilter}
+                onChange={(val) => {
+                  setProcessFilter(val);
+                  setPage(1);
+                }}
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                style={{ width: 220 }}
+                options={processFilterOptions}
+              />
+
+              {hasAdminVisibility && effectiveScope === "all" && (
+                <Input
+                  size="small"
+                  placeholder="Filtrar por asignado (@usuario)..."
+                  value={assigneeFilter}
+                  onChange={(e) => {
+                    setAssigneeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  style={{ width: 190 }}
+                  allowClear
+                  prefix={<UserOutlined style={{ color: "#94a3b8" }} />}
+                />
+              )}
+
+              <Button
+                size="small"
+                type="primary"
+                icon={<FilterOutlined />}
+                onClick={handleSearch}
+              >
+                Buscar
+              </Button>
+
+              {hasActiveFilters && (
+                <Button size="small" onClick={handleResetSearch}>
+                  Limpiar
+                </Button>
+              )}
+            </Space>
+          </div>
         </Space>
       </Card>
 
-      {/* Pestañas y Tablas de Aprobación */}
+      {/* Tabla Compacta de Aprobaciones */}
       <Card
-        styles={{ body: { padding: "16px 20px 0 20px" } }}
+        styles={{ body: { padding: 0 } }}
         style={{
           borderRadius: 8,
           borderColor: "#e2e8f0",
           overflow: "hidden",
         }}
       >
-        <Tabs
-          activeKey={activeTab}
-          onChange={(key) => setActiveTab(key as "mine" | "available")}
-          items={[
-            {
-              key: "mine",
-              label: (
-                <Space>
-                  <span>Pendientes de Mi Aprobación</span>
-                  <Badge
-                    count={myPendingCount}
-                    overflowCount={99}
-                    style={{ backgroundColor: "#d97706" }}
-                  />
-                </Space>
-              ),
-              children: (
-                <Table<WorkflowTask>
-                  rowKey="id"
-                  columns={mineColumns}
-                  dataSource={paginatedMine}
-                  loading={loadingMine}
-                  scroll={{ x: 860 }}
-                  style={{ marginBottom: 16 }}
-                  locale={{
-                    emptyText: (
-                      <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="¡Excelente! No tienes solicitudes pendientes de tu visto bueno en este momento."
-                      />
-                    ),
-                  }}
-                  pagination={{
-                    current: minePage,
-                    pageSize: minePageSize,
-                    total: myPendingCount,
-                    showSizeChanger: true,
-                    pageSizeOptions: ["10", "20", "50"],
-                    showTotal: (total, range) =>
-                      `${range[0]}-${range[1]} de ${total} pendientes`,
-                    onChange: (p, ps) => {
-                      setMinePage(p);
-                      setMinePageSize(ps);
-                    },
-                  }}
-                />
-              ),
+        <Table<WorkflowTask>
+          size="small"
+          rowKey="id"
+          columns={columns}
+          dataSource={paginatedData}
+          loading={isLoading}
+          scroll={{ x: effectiveScope === "all" ? 880 : 800 }}
+          locale={{
+            emptyText: (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                style={{ margin: "24px 0" }}
+                description={
+                  hasActiveFilters
+                    ? "No se encontraron aprobaciones con los filtros aplicados."
+                    : effectiveScope === "all"
+                      ? "No hay solicitudes pendientes de aprobación en el sistema."
+                      : "No tienes solicitudes pendientes de aprobación asignadas en este momento."
+                }
+              />
+            ),
+          }}
+          pagination={{
+            size: "small",
+            current: page,
+            pageSize: pageSize,
+            total: activeList.length,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "20", "50"],
+            style: { padding: "8px 16px", margin: 0 },
+            showTotal: (total, range) =>
+              `${range[0]}-${range[1]} de ${total} solicitudes`,
+            onChange: (p, ps) => {
+              setPage(p);
+              setPageSize(ps);
             },
-            {
-              key: "available",
-              label: (
-                <Space>
-                  <span>{isAdmin ? "Todas las Solicitudes en Curso" : "Disponibles para Evaluar"}</span>
-                  <Badge
-                    count={availablePendingCount}
-                    overflowCount={99}
-                    style={{ backgroundColor: "#3b82f6" }}
-                  />
-                </Space>
-              ),
-              children: (
-                <Table<WorkflowTask>
-                  rowKey="id"
-                  columns={availableColumns}
-                  dataSource={paginatedAvailable}
-                  loading={loadingAvailable}
-                  scroll={{ x: 800 }}
-                  style={{ marginBottom: 16 }}
-                  locale={{
-                    emptyText: (
-                      <Empty
-                        image={Empty.PRESENTED_IMAGE_SIMPLE}
-                        description="No hay solicitudes grupales esperando revisor en este momento."
-                      />
-                    ),
-                  }}
-                  pagination={{
-                    current: availablePage,
-                    pageSize: availablePageSize,
-                    total: availablePendingCount,
-                    showSizeChanger: true,
-                    pageSizeOptions: ["10", "20", "50"],
-                    showTotal: (total, range) =>
-                      `${range[0]}-${range[1]} de ${total} disponibles`,
-                    onChange: (p, ps) => {
-                      setAvailablePage(p);
-                      setAvailablePageSize(ps);
-                    },
-                  }}
-                />
-              ),
-            },
-          ]}
+          }}
         />
       </Card>
 
@@ -787,3 +823,4 @@ export function ApprovalsPage() {
     </div>
   );
 }
+
