@@ -5,7 +5,7 @@ import { ProtectedRoute } from "../features/auth/components/ProtectedRoute";
 import { LoginPage } from "../features/auth/pages/LoginPage";
 
 import { DefinitionsPage } from "../features/definitions";
-import { InstancesPage } from "../features/instances";
+import { InstancesPage, ProcessTrackingPage } from "../features/instances";
 import { TasksPage } from "../features/tasks";
 import { ApprovalsPage } from "../features/approvals";
 import { KeycloakAdminPage, WorkflowConfigPage } from "../features/keycloak-admin";
@@ -31,6 +31,10 @@ export const router = createBrowserRouter([
                     {
                         path: "solicitudes",
                         element: <InstancesPage />,
+                    },
+                    {
+                        path: "seguimiento",
+                        element: <ProcessTrackingPage />,
                     },
                     {
                         path: "instancias",

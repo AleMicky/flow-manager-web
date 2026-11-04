@@ -7,3 +7,4 @@ export * from "./components/CompleteTaskModal";
 export * from "./components/TaskDetailDrawer";
 export * from "./components/DynamicFormRenderer";
 export * from "./components/TaskFormConfigModal";
+export * from "./components/TaskAntecedentsViewer";

@@ -1,3 +1,4 @@
+import dayjs from "dayjs";
 import type { ProcessDefinition } from "../../definitions/types/definitions.types";
 import type { WorkflowProcessMetadata } from "../types/instances.types";
 
@@ -75,4 +76,48 @@ export function formatActivityName(activityId?: string | null): {
   const label = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
   return { label, isCompletedOrEmpty: false };
 }
+
+/**
+ * Formatea una duración en milisegundos o por diferencia de fechas a lenguaje humano comprensible.
+ * Ej: '15 min', '2h 30m', '3d 4h'.
+ */
+export function formatDuration(
+  durationInMillis?: number | null,
+  startIso?: string | null,
+  endIso?: string | null,
+): string {
+  let ms = durationInMillis;
+  if ((ms === undefined || ms === null) && startIso) {
+    const start = dayjs(startIso);
+    const end = endIso ? dayjs(endIso) : dayjs();
+    ms = end.diff(start);
+  }
+
+  if (ms === undefined || ms === null || ms < 0) {
+    return "En curso";
+  }
+
+  if (ms < 1000) {
+    return "Menos de 1 seg";
+  }
+
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    const remainingHours = hours % 24;
+    return remainingHours > 0 ? `${days}d ${remainingHours}h` : `${days}d`;
+  }
+  if (hours > 0) {
+    const remainingMins = minutes % 60;
+    return remainingMins > 0 ? `${hours}h ${remainingMins}m` : `${hours}h`;
+  }
+  if (minutes > 0) {
+    return `${minutes} min`;
+  }
+  return `${seconds} seg`;
+}
+
 

@@ -161,7 +161,13 @@ export function DefinitionsPage() {
   const user = useAuthStore((s) => s.user);
   const canDeploy = Boolean(
     user?.roles?.some((r) =>
-      ["workflow-admin", "workflow-designer"].includes(r),
+      [
+        "workflow-admin",
+        "workflow-designer",
+        "admin",
+        "realm-admin",
+        "superadmin",
+      ].includes(r.toLowerCase()),
     ),
   );
 
@@ -496,8 +502,8 @@ export function DefinitionsPage() {
           <Tooltip
             title={
               !canDeploy
-                ? "Requiere rol workflow-admin o workflow-designer para publicar"
-                : undefined
+                ? "Requiere rol de administración para publicar procesos BPMN"
+                : "Subir y desplegar archivo BPMN XML en el motor Flowable"
             }
           >
             <Button
@@ -506,7 +512,7 @@ export function DefinitionsPage() {
               onClick={() => setDeployModalOpen(true)}
               disabled={!canDeploy}
             >
-              Publicar Proceso
+              Publicar / Desplegar BPMN
             </Button>
           </Tooltip>
         </Space>

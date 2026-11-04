@@ -333,6 +333,100 @@ export function TaskFormConfigModal({
           required: false,
         },
       ]);
+    } else if (templateKey === "comites") {
+      setFields([
+        {
+          id: `field_${Date.now()}_1`,
+          key: "aprobadoGaf",
+          title: "VoBo Gerencia Administrativa Financiera",
+          type: "boolean",
+          required: true,
+        },
+        {
+          id: `field_${Date.now()}_2`,
+          key: "comiteEvaluador",
+          title: "Miembros Comité Evaluador Designados",
+          type: "string",
+          required: true,
+          description: "Nombres y cargos (Unidad Solicitante + Adm./Fin.)",
+        },
+        {
+          id: `field_${Date.now()}_3`,
+          key: "responsableRecepcion",
+          title: "Responsable de Recepción Designado",
+          type: "string",
+          required: true,
+          description: "Nombre y cargo del responsable técnico",
+        },
+        {
+          id: `field_${Date.now()}_4`,
+          key: "memorandoDesignacion",
+          title: "Memorando Oficial de Designación (PDF)",
+          type: "file",
+          required: false,
+        },
+        {
+          id: `field_${Date.now()}_5`,
+          key: "obsGaf",
+          title: "Instrucciones de la GAF",
+          type: "textarea",
+          required: false,
+        },
+      ]);
+    } else if (templateKey === "ajuste") {
+      setFields([
+        {
+          id: `field_${Date.now()}_1`,
+          key: "accionSolicitante",
+          title: "Acción a Tomar",
+          type: "select",
+          required: true,
+          enumOptions: ["REENVIAR", "CANCELAR"],
+          description: "Reenviar con ajustes o Desistir del trámite",
+        },
+        {
+          id: `field_${Date.now()}_2`,
+          key: "justificacionAjuste",
+          title: "Detalle de Modificaciones Realizadas",
+          type: "textarea",
+          required: true,
+          description: "Explicar las correcciones aplicadas a la solicitud",
+        },
+        {
+          id: `field_${Date.now()}_3`,
+          key: "documentoAjustado",
+          title: "Documento Subsanado (ET / Cotización / TDR)",
+          type: "file",
+          required: false,
+        },
+      ]);
+    } else if (templateKey === "decision") {
+      setFields([
+        {
+          id: `field_${Date.now()}_1`,
+          key: "decisionFinal",
+          title: "Decisión Final de Contratación",
+          type: "select",
+          required: true,
+          enumOptions: ["APROBADO", "OBSERVADO", "RECHAZADO"],
+          description: "Aprobar inicio, Observar para subsanación o Rechazar",
+        },
+        {
+          id: `field_${Date.now()}_2`,
+          key: "resolucionAdjudicacion",
+          title: "Fundamentación / Resolución",
+          type: "textarea",
+          required: true,
+          description: "Fundamento legal y técnico de la decisión",
+        },
+        {
+          id: `field_${Date.now()}_3`,
+          key: "resolucionFirmada",
+          title: "Resolución o Acta de Aprobación Firmada (PDF)",
+          type: "file",
+          required: false,
+        },
+      ]);
     }
     message.info("Plantilla de campos cargada exitosamente.");
   };
@@ -357,6 +451,21 @@ export function TaskFormConfigModal({
       key: "legal",
       label: "Plantilla Dictamen Legal (Visto Bueno + Informe PDF)",
       onClick: () => applyTemplate("legal"),
+    },
+    {
+      key: "comites",
+      label: "Plantilla GAF: Designación de Comités (Cat. II / III)",
+      onClick: () => applyTemplate("comites"),
+    },
+    {
+      key: "ajuste",
+      label: "Plantilla Solicitante: Subsanación y Reenvío",
+      onClick: () => applyTemplate("ajuste"),
+    },
+    {
+      key: "decision",
+      label: "Plantilla Decisión Final / Resolución (Gerente)",
+      onClick: () => applyTemplate("decision"),
     },
   ];
 

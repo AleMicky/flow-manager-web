@@ -4,20 +4,18 @@ import {
     CheckCircleOutlined,
     CheckSquareOutlined,
     FileTextOutlined,
+    FileSearchOutlined,
     MenuFoldOutlined,
     MenuUnfoldOutlined,
-    QuestionCircleOutlined,
     SafetyCertificateOutlined,
     SettingOutlined,
 } from "@ant-design/icons";
-import { Badge, Button, Menu, Tooltip, Typography } from "antd";
+import { Badge, Button, Menu, Tooltip } from "antd";
 import type { MenuProps } from "antd";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth.store";
 import { useInstancesQuery } from "../../features/instances";
 import { useMyTasksQuery } from "../../features/tasks";
-
-const { Text } = Typography;
 
 interface AppSidebarProps {
     collapsed: boolean;
@@ -104,6 +102,11 @@ export function AppSidebar({
                             )}
                         </div>
                     ),
+                },
+                {
+                    key: "/seguimiento",
+                    icon: <FileSearchOutlined />,
+                    label: "Trazabilidad",
                 },
                 {
                     key: "/tareas",
@@ -207,54 +210,9 @@ export function AppSidebar({
                 />
             </div>
 
-            {/* Pie del Sidebar: Soporte TI & Toggle */}
-            <div className="fm-sidebar-bottom">
-                {!collapsed ? (
-                    <div className="fm-sidebar-help-card">
-                        <div className="fm-help-header">
-                            <div className="fm-help-icon">
-                                <QuestionCircleOutlined />
-                            </div>
-                            <div className="fm-help-text">
-                                <Text strong className="fm-help-title">
-                                    Mesa de Ayuda TI
-                                </Text>
-                                <Text className="fm-help-description">
-                                    Soporte técnico y manuales
-                                </Text>
-                            </div>
-                        </div>
-                        <Button
-                            type="primary"
-                            ghost
-                            size="small"
-                            className="fm-help-action-btn"
-                            onClick={() => {
-                                navigate("/configuracion");
-                                onNavigate?.();
-                            }}
-                        >
-                            Ver guías BPMN
-                        </Button>
-                    </div>
-                ) : (
-                    <div className="fm-sidebar-help-compact">
-                        <Tooltip title="Soporte y Mesa de Ayuda TI" placement="right">
-                            <Button
-                                type="text"
-                                className="fm-icon-button fm-icon-button--dark"
-                                icon={<QuestionCircleOutlined />}
-                                onClick={() => {
-                                    navigate("/configuracion");
-                                    onNavigate?.();
-                                }}
-                            />
-                        </Tooltip>
-                    </div>
-                )}
-
-                {/* Botón para colapsar en el sidebar */}
-                {showToggle && onToggleCollapse && (
+            {/* Pie del Sidebar: Toggle colapsar */}
+            {showToggle && onToggleCollapse && (
+                <div className="fm-sidebar-bottom">
                     <div className="fm-sidebar-toggle-row">
                         <Tooltip
                             title={collapsed ? "Expandir menú lateral" : "Contraer menú lateral"}
@@ -270,8 +228,8 @@ export function AppSidebar({
                             </Button>
                         </Tooltip>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 }
