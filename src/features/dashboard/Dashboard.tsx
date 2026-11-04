@@ -86,10 +86,8 @@ export function Dashboard() {
     [myTasksData?.data],
   );
   const approvalTasks = useMemo(() => {
-    const mine = (myTasksData?.data || []).filter(isApprovalTask);
-    const avail = (availableTasksData?.data || []).filter(isApprovalTask);
-    return [...mine, ...avail];
-  }, [myTasksData?.data, availableTasksData?.data]);
+    return (myTasksData?.data || []).filter(isApprovalTask);
+  }, [myTasksData?.data]);
 
   const totalMyTasks = operationalTasks.length;
   const totalAvailableTasks = approvalTasks.length;

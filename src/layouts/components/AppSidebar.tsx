@@ -12,10 +12,15 @@ import {
 } from "@ant-design/icons";
 import { Badge, Button, Menu, Tooltip } from "antd";
 import type { MenuProps } from "antd";
+import { useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../stores/auth.store";
 import { useInstancesQuery } from "../../features/instances";
-import { useMyTasksQuery } from "../../features/tasks";
+import {
+    isApprovalTask,
+    isOperationalTask,
+    useMyTasksQuery,
+} from "../../features/tasks";
 
 interface AppSidebarProps {
     collapsed: boolean;
@@ -45,8 +50,23 @@ export function AppSidebar({
     const { data: instancesData } = useInstancesQuery({ size: 1 });
     const activeInstancesCount = instancesData?.total ?? 0;
 
-    const { data: myTasksData } = useMyTasksQuery({ size: 1 });
-    const myTasksCount = myTasksData?.total ?? 0;
+    const { data: myTasksData } = useMyTasksQuery({ start: 0, size: 100 });
+    const { operationalTasksCount, approvalTasksCount } = useMemo(() => {
+        const list = myTasksData?.data ?? [];
+        let operational = 0;
+        let approvals = 0;
+        for (const task of list) {
+            if (isApprovalTask(task)) {
+                approvals += 1;
+            } else if (isOperationalTask(task)) {
+                operational += 1;
+            }
+        }
+        return {
+            operationalTasksCount: operational,
+            approvalTasksCount: approvals,
+        };
+    }, [myTasksData?.data]);
 
     const handleMenuClick: MenuProps["onClick"] = ({ key }) => {
         if (key.startsWith("/")) {
@@ -114,9 +134,9 @@ export function AppSidebar({
                     label: (
                         <div className="fm-menu-badge-item">
                             <span>Mis tareas</span>
-                            {myTasksCount > 0 && (
+                            {operationalTasksCount > 0 && (
                                 <Badge
-                                    count={myTasksCount}
+                                    count={operationalTasksCount}
                                     size="small"
                                     className="fm-nav-badge fm-nav-badge--blue"
                                 />
@@ -130,9 +150,9 @@ export function AppSidebar({
                     label: (
                         <div className="fm-menu-badge-item">
                             <span>Aprobaciones</span>
-                            {myTasksCount > 0 && (
+                            {approvalTasksCount > 0 && (
                                 <Badge
-                                    count={myTasksCount}
+                                    count={approvalTasksCount}
                                     size="small"
                                     className="fm-nav-badge fm-nav-badge--amber"
                                 />
