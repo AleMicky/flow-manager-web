@@ -17,15 +17,12 @@ import {
   Alert,
   Button,
   Card,
-  Col,
   Dropdown,
   Empty,
   Input,
   Popconfirm,
-  Row,
   Select,
   Space,
-  Statistic,
   Switch,
   Table,
   Tag,
@@ -233,31 +230,31 @@ export function DefinitionsPage() {
       dataIndex: "name",
       key: "name",
       render: (name: string, record) => (
-        <Space align="start" size="middle">
+        <Space align="center" size="small">
           <div
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 8,
+              width: 28,
+              height: 28,
+              borderRadius: 6,
               backgroundColor: record.suspended ? "#f1f5f9" : "#eff6ff",
               border: `1px solid ${record.suspended ? "#cbd5e1" : "#bfdbfe"}`,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               color: record.suspended ? "#64748b" : "#2563eb",
-              fontSize: 16,
+              fontSize: 14,
               flexShrink: 0,
             }}
           >
             <ApartmentOutlined />
           </div>
           <div style={{ minWidth: 0 }}>
-            <Space orientation="horizontal" size="small" wrap>
-              <Text strong style={{ fontSize: 14 }}>
+            <Space size="small" wrap>
+              <Text strong style={{ fontSize: 13 }}>
                 {name || record.key}
               </Text>
               {record.suspended && (
-                <Tag color="warning" bordered={false} style={{ fontSize: 11 }}>
+                <Tag color="warning" bordered={false} style={{ fontSize: 10, padding: "0 4px" }}>
                   Inactivo
                 </Tag>
               )}
@@ -266,13 +263,13 @@ export function DefinitionsPage() {
               <Paragraph
                 type="secondary"
                 ellipsis={{ rows: 1 }}
-                style={{ margin: 0, fontSize: 12 }}
+                style={{ margin: 0, fontSize: 11, maxWidth: 360 }}
               >
                 {record.description}
               </Paragraph>
             )}
-            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-              Recurso: <Text code style={{ fontSize: 11 }}>{record.resource}</Text>
+            <div style={{ fontSize: 10, color: "#64748b", lineHeight: 1.2 }}>
+              Recurso: <Text code style={{ fontSize: 10 }}>{record.resource}</Text>
             </div>
           </div>
         </Space>
@@ -471,29 +468,39 @@ export function DefinitionsPage() {
   const suspendedCount = currentList.filter((item) => item.suspended).length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Cabecera */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Cabecera Compacta */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
+          alignItems: "center",
           flexWrap: "wrap",
-          gap: 16,
+          gap: 12,
         }}
       >
         <div>
-          <Title level={2} style={{ margin: 0 }}>
-            <ApartmentOutlined style={{ marginRight: 8, color: "#3b82f6" }} />
+          <Title
+            level={4}
+            style={{
+              margin: 0,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              fontSize: 18,
+            }}
+          >
+            <ApartmentOutlined style={{ color: "#3b82f6" }} />
             Definiciones de Procesos BPMN
           </Title>
-          <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
-            Catálogo de diagramas y flujos de trabajo publicados en el motor Flowable. Puedes activar o inactivar procesos para controlar su disponibilidad en los formularios.
-          </Paragraph>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Catálogo de diagramas y flujos de trabajo publicados en el motor Flowable.
+          </Text>
         </div>
 
-        <Space wrap>
+        <Space size="small" wrap>
           <Button
+            size="small"
             icon={<ReloadOutlined spin={isFetching} />}
             onClick={() => refetch()}
           >
@@ -508,6 +515,7 @@ export function DefinitionsPage() {
           >
             <Button
               type="primary"
+              size="small"
               icon={<CloudUploadOutlined />}
               onClick={() => setDeployModalOpen(true)}
               disabled={!canDeploy}
@@ -541,121 +549,117 @@ export function DefinitionsPage() {
         />
       )}
 
-      {/* Tarjetas Resumen / KPIs */}
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={6}>
-          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
-            <Statistic
-              title={<span style={{ fontSize: 12 }}>Total Publicados</span>}
-              value={totalCount}
-              prefix={<ApartmentOutlined style={{ color: "#3b82f6" }} />}
-              valueStyle={{ fontSize: 20, fontWeight: 600 }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
-            <Statistic
-              title={<span style={{ fontSize: 12 }}>Activos en Vista</span>}
-              value={activeCount}
-              prefix={<CheckCircleOutlined style={{ color: "#10b981" }} />}
-              valueStyle={{ fontSize: 20, fontWeight: 600, color: "#10b981" }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
-            <Statistic
-              title={<span style={{ fontSize: 12 }}>Inactivos en Vista</span>}
-              value={suspendedCount}
-              prefix={<StopOutlined style={{ color: "#f97316" }} />}
-              valueStyle={{
-                fontSize: 20,
-                fontWeight: 600,
-                color: suspendedCount > 0 ? "#f97316" : "#64748b",
-              }}
-            />
-          </Card>
-        </Col>
-        <Col xs={12} sm={6}>
-          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
-            <div style={{ color: "rgba(0, 0, 0, 0.45)", fontSize: 12, marginBottom: 4 }}>
-              Filtro de Versiones
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
-              <Tag color={latestOnly ? "geekblue" : "purple"} style={{ margin: 0, fontWeight: 500 }}>
+      {/* Barra de Control Compacta y Unificada (KPIs Chips + Filtros en un solo Card) */}
+      <Card size="small" styles={{ body: { padding: "10px 14px" } }}>
+        <Space direction="vertical" size="small" style={{ width: "100%" }}>
+          {/* Fila 1: KPIs Chips y totalizador */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <Space size={6} wrap>
+              <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}>
+                Total: <strong>{totalCount}</strong>
+              </Tag>
+              <Tag color="green" style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}>
+                Activos: <strong>{activeCount}</strong>
+              </Tag>
+              <Tag
+                color={suspendedCount > 0 ? "orange" : "default"}
+                style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}
+              >
+                Inactivos: <strong>{suspendedCount}</strong>
+              </Tag>
+              <Tag color={latestOnly ? "geekblue" : "purple"} style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}>
                 {latestOnly ? "Última Versión" : "Todas las Versiones"}
               </Tag>
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Barra de Filtros y Búsqueda */}
-      <Card size="small">
-        <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
-          <Space wrap size="middle">
-            <Input
-              placeholder="Buscar por nombre o clave..."
-              value={searchTerm}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSearchTerm(val);
-                if (!val.trim()) {
-                  setDebouncedSearch("");
-                  setPage(1);
-                }
-              }}
-              onPressEnter={handleSearch}
-              style={{ width: 240 }}
-              allowClear
-              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-            />
-
-            <Select
-              value={statusFilter}
-              onChange={(val) => {
-                setStatusFilter(val);
-                setPage(1);
-              }}
-              style={{ width: 170 }}
-              options={[
-                { value: "all", label: "Todos los estados" },
-                { value: "active", label: "Solo Activos" },
-                { value: "suspended", label: "Solo Inactivos" },
-              ]}
-            />
-
-            <Space size="small">
-              <Switch
-                size="small"
-                checked={latestOnly}
-                onChange={(checked) => {
-                  setLatestOnly(checked);
-                  setPage(1);
-                }}
-              />
-              <Text style={{ fontSize: 13 }}>Solo última versión</Text>
             </Space>
 
-            <Button type="primary" onClick={handleSearch}>
-              Buscar
-            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Total registros: <Text strong>{data?.total ?? 0}</Text>
+            </Text>
+          </div>
 
-            {(debouncedSearch || statusFilter !== "all" || !latestOnly) && (
-              <Button onClick={handleResetSearch}>Limpiar filtros</Button>
-            )}
-          </Space>
+          {/* Fila 2: Filtros Compactos */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+              paddingTop: 4,
+            }}
+          >
+            <Space size="small" wrap>
+              <Input
+                size="small"
+                placeholder="Buscar por nombre o clave..."
+                value={searchTerm}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSearchTerm(val);
+                  if (!val.trim()) {
+                    setDebouncedSearch("");
+                    setPage(1);
+                  }
+                }}
+                onPressEnter={handleSearch}
+                style={{ width: 220 }}
+                allowClear
+                prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+              />
 
-          <Text type="secondary" style={{ fontSize: 13 }}>
-            Total registros: <Text strong>{data?.total ?? 0}</Text>
-          </Text>
+              <Select
+                size="small"
+                value={statusFilter}
+                onChange={(val) => {
+                  setStatusFilter(val);
+                  setPage(1);
+                }}
+                style={{ width: 150 }}
+                options={[
+                  { value: "all", label: "Todos los estados" },
+                  { value: "active", label: "Solo Activos" },
+                  { value: "suspended", label: "Solo Inactivos" },
+                ]}
+              />
+
+              <Space size={4}>
+                <Switch
+                  size="small"
+                  checked={latestOnly}
+                  onChange={(checked) => {
+                    setLatestOnly(checked);
+                    setPage(1);
+                  }}
+                />
+                <Text style={{ fontSize: 12 }}>Última versión</Text>
+              </Space>
+
+              <Button size="small" type="primary" onClick={handleSearch}>
+                Buscar
+              </Button>
+
+              {(debouncedSearch || statusFilter !== "all" || !latestOnly) && (
+                <Button size="small" onClick={handleResetSearch}>
+                  Limpiar
+                </Button>
+              )}
+            </Space>
+          </div>
         </Space>
       </Card>
 
       {/* Tabla Principal */}
       <Card styles={{ body: { padding: 0 } }} style={{ overflow: "hidden" }}>
         <Table<ProcessDefinition>
+          size="small"
           rowKey="id"
           columns={columns}
           dataSource={data?.data ?? []}

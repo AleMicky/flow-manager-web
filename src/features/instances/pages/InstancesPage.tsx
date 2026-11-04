@@ -19,15 +19,12 @@ import {
   Avatar,
   Button,
   Card,
-  Col,
   Empty,
   Input,
   Popconfirm,
-  Row,
   Segmented,
   Select,
   Space,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -52,7 +49,7 @@ import {
 } from "../utils/instanceFormatters";
 import { useAuthStore } from "../../../stores/auth.store";
 
-const { Title, Paragraph, Text } = Typography;
+const { Title, Text } = Typography;
 
 export function InstancesPage() {
   const { user } = useAuthStore();
@@ -209,17 +206,17 @@ export function InstancesPage() {
       };
       message.error(
         axErr.response?.data?.message ||
-          axErr.message ||
-          "Error al cancelar la solicitud",
+        axErr.message ||
+        "Error al cancelar la solicitud",
       );
     }
   };
 
   const hasActiveFilters = Boolean(
     appliedFilters.businessKey ||
-      appliedFilters.processDefinitionKey ||
-      appliedFilters.startedBy ||
-      (isAdmin && adminScope === "mine"),
+    appliedFilters.processDefinitionKey ||
+    appliedFilters.startedBy ||
+    (isAdmin && adminScope === "mine"),
   );
 
   // Columnas amigables para el usuario final (con identificación del solicitante)
@@ -228,34 +225,32 @@ export function InstancesPage() {
       title: "Código de Solicitud",
       dataIndex: "businessKey",
       key: "businessKey",
-      width: 200,
+      width: 170,
       render: (bKey: string | null) =>
         bKey ? (
-          <Space size="small">
-            <Tag
-              color="blue"
-              style={{
-                fontSize: 13,
-                fontWeight: 600,
-                padding: "2px 8px",
-                borderRadius: 4,
-              }}
-            >
-              <FileTextOutlined style={{ marginRight: 6 }} />
-              {bKey}
-            </Tag>
-          </Space>
-        ) : (
-          <Tag color="default" style={{ fontSize: 12 }}>
+          <Tag
+            color="blue"
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              padding: "1px 6px",
+              borderRadius: 4,
+            }}
+          >
             <FileTextOutlined style={{ marginRight: 4 }} />
-            Trámite en curso
+            {bKey}
+          </Tag>
+        ) : (
+          <Tag color="default" style={{ fontSize: 11, padding: "1px 6px" }}>
+            <FileTextOutlined style={{ marginRight: 4 }} />
+            En curso
           </Tag>
         ),
     },
     {
       title: "Registrado por",
       key: "startedBy",
-      width: 210,
+      width: 190,
       render: (_, record) => {
         const applicant = record.registradoPor || record.startUserId;
         const isMe =
@@ -268,16 +263,16 @@ export function InstancesPage() {
 
         if (isMe) {
           return (
-            <Space size="small">
+            <Space size={6}>
               <Avatar
-                size={24}
-                style={{ backgroundColor: "#2563eb", fontSize: 11 }}
+                size={20}
+                style={{ backgroundColor: "#2563eb", fontSize: 10 }}
                 icon={<UserOutlined />}
               />
-              <Text strong style={{ color: "#1e293b", fontSize: 13 }}>
+              <Text strong style={{ color: "#1e293b", fontSize: 12 }}>
                 {user?.name || user?.username}
               </Text>
-              <Tag color="blue" style={{ fontSize: 11, padding: "0 6px" }}>
+              <Tag color="blue" style={{ fontSize: 10, padding: "0 4px", margin: 0 }}>
                 Tú
               </Tag>
             </Space>
@@ -286,13 +281,13 @@ export function InstancesPage() {
 
         if (applicant) {
           return (
-            <Space size="small">
+            <Space size={6}>
               <Avatar
-                size={24}
-                style={{ backgroundColor: "#64748b", fontSize: 11 }}
+                size={20}
+                style={{ backgroundColor: "#64748b", fontSize: 10 }}
                 icon={<UserOutlined />}
               />
-              <Text style={{ fontSize: 13, color: "#334155" }}>
+              <Text style={{ fontSize: 12, color: "#334155" }}>
                 {applicant}
               </Text>
             </Space>
@@ -300,13 +295,13 @@ export function InstancesPage() {
         }
 
         return (
-          <Space size="small">
+          <Space size={6}>
             <Avatar
-              size={24}
-              style={{ backgroundColor: "#94a3b8", fontSize: 11 }}
+              size={20}
+              style={{ backgroundColor: "#94a3b8", fontSize: 10 }}
               icon={<UserOutlined />}
             />
-            <Text type="secondary" italic style={{ fontSize: 12 }}>
+            <Text type="secondary" italic style={{ fontSize: 11 }}>
               Usuario solicitante
             </Text>
           </Space>
@@ -324,11 +319,9 @@ export function InstancesPage() {
           availableProcesses,
         );
         return (
-          <Space direction="vertical" size={0}>
-            <Text strong style={{ fontSize: 13, color: "#1e293b" }}>
-              {friendlyName}
-            </Text>
-          </Space>
+          <Text strong style={{ fontSize: 12, color: "#1e293b" }}>
+            {friendlyName}
+          </Text>
         );
       },
     },
@@ -336,11 +329,11 @@ export function InstancesPage() {
       title: "Etapa / Paso Actual",
       dataIndex: "activityId",
       key: "activityId",
-      width: 220,
+      width: 190,
       render: (activityId: string | null, record) => {
         if (record.ended) {
           return (
-            <Tag color="default" style={{ fontSize: 12 }}>
+            <Tag color="default" style={{ fontSize: 11, padding: "1px 6px" }}>
               Trámite concluido
             </Tag>
           );
@@ -350,7 +343,7 @@ export function InstancesPage() {
           <Tag
             color={isCompletedOrEmpty ? "default" : "cyan"}
             icon={isCompletedOrEmpty ? undefined : <ClockCircleOutlined />}
-            style={{ fontSize: 12, padding: "2px 8px" }}
+            style={{ fontSize: 11, padding: "1px 6px" }}
           >
             {label}
           </Tag>
@@ -360,14 +353,14 @@ export function InstancesPage() {
     {
       title: "Estado",
       key: "status",
-      width: 140,
+      width: 120,
       render: (_, record) => {
         if (record.ended) {
           return (
             <Tag
               color="success"
               icon={<CheckCircleOutlined />}
-              style={{ fontSize: 12, padding: "2px 8px" }}
+              style={{ fontSize: 11, padding: "1px 6px" }}
             >
               Finalizado
             </Tag>
@@ -378,7 +371,7 @@ export function InstancesPage() {
             <Tag
               color="warning"
               icon={<PauseCircleOutlined />}
-              style={{ fontSize: 12, padding: "2px 8px" }}
+              style={{ fontSize: 11, padding: "1px 6px" }}
             >
               Pausado
             </Tag>
@@ -388,7 +381,7 @@ export function InstancesPage() {
           <Tag
             color="processing"
             icon={<SyncOutlined spin />}
-            style={{ fontSize: 12, padding: "2px 8px" }}
+            style={{ fontSize: 11, padding: "1px 6px" }}
           >
             En Proceso
           </Tag>
@@ -398,10 +391,10 @@ export function InstancesPage() {
     {
       title: "Acciones",
       key: "actions",
-      width: 190,
+      width: 160,
       fixed: "right",
       render: (_, record) => (
-        <Space size="small">
+        <Space size={4}>
           <Button
             type="primary"
             ghost
@@ -414,7 +407,7 @@ export function InstancesPage() {
               })
             }
           >
-            Ver Detalle
+            Detalle
           </Button>
 
           <Popconfirm
@@ -448,57 +441,58 @@ export function InstancesPage() {
   const totalCatalogProcesses = processFilterOptions.length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      {/* Cabecera Principal */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Cabecera Compacta */}
       <div
         style={{
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "flex-start",
+          alignItems: "center",
           flexWrap: "wrap",
-          gap: 16,
+          gap: 12,
         }}
       >
         <div>
           <Title
-            level={2}
+            level={4}
             style={{
               margin: 0,
               display: "flex",
               alignItems: "center",
-              flexWrap: "wrap",
               gap: 8,
+              fontSize: 18,
             }}
           >
-            <FileDoneOutlined style={{ marginRight: 6, color: "#2563eb" }} />
+            <FileDoneOutlined style={{ color: "#2563eb" }} />
             Seguimiento de Solicitudes y Trámites
             {isAdmin ? (
               <Tag
                 color="purple"
                 icon={<CrownOutlined />}
-                style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px" }}
+                style={{ fontSize: 11, fontWeight: 500, padding: "0 6px" }}
               >
-                Vista Administrador (Todas las solicitudes)
+                Admin (Global)
               </Tag>
             ) : (
               <Tag
                 color="blue"
                 icon={<UserOutlined />}
-                style={{ fontSize: 12, fontWeight: 500, padding: "2px 8px" }}
+                style={{ fontSize: 11, fontWeight: 500, padding: "0 6px" }}
               >
-                Mis Solicitudes ({user?.name || user?.username})
+                Mis Solicitudes
               </Tag>
             )}
           </Title>
-          <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
             {isAdmin
-              ? "Supervisión, auditoría y seguimiento global de todas las solicitudes registradas en la organización."
+              ? "Supervisión global de todas las solicitudes y flujos de trabajo en la organización."
               : "Consulta y supervisa el avance en tiempo real de tus solicitudes registradas."}
-          </Paragraph>
+          </Text>
         </div>
 
-        <Space wrap>
+        <Space size="small" wrap>
           <Button
+            size="small"
             icon={<ReloadOutlined spin={isFetching} />}
             onClick={() => refetch()}
           >
@@ -506,92 +500,32 @@ export function InstancesPage() {
           </Button>
           <Button
             type="primary"
+            size="small"
             icon={<PlusOutlined />}
             onClick={() => setStartModalOpen(true)}
           >
-            Iniciar Nueva Solicitud
+            Nueva Solicitud
           </Button>
         </Space>
       </div>
 
-      {/* Tarjetas KPI de Resumen */}
-      <Row gutter={[16, 16]}>
-        <Col xs={24} sm={8}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
-            <Statistic
-              title={
-                <Space>
-                  <FileTextOutlined style={{ color: "#3b82f6" }} />
-                  <Text type="secondary">
-                    {isAdmin && adminScope === "all"
-                      ? "Total de Solicitudes (Global)"
-                      : "Mis Solicitudes"}
-                  </Text>
-                </Space>
-              }
-              value={totalCount}
-              valueStyle={{ fontWeight: 600, color: "#1e293b" }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
-            <Statistic
-              title={
-                <Space>
-                  <SyncOutlined style={{ color: "#10b981" }} />
-                  <Text type="secondary">En Curso (Página actual)</Text>
-                </Space>
-              }
-              value={inProgressCount}
-              valueStyle={{ fontWeight: 600, color: "#10b981" }}
-            />
-          </Card>
-        </Col>
-        <Col xs={24} sm={8}>
-          <Card size="small" style={{ borderRadius: 8, borderColor: "#e2e8f0" }}>
-            <Statistic
-              title={
-                <Space>
-                  <ApartmentOutlined style={{ color: "#8b5cf6" }} />
-                  <Text type="secondary">Tipos de Trámites Disponibles</Text>
-                </Space>
-              }
-              value={totalCatalogProcesses}
-              valueStyle={{ fontWeight: 600, color: "#8b5cf6" }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Barra de Filtros y Búsqueda */}
-      <Card
-        size="small"
-        style={{
-          borderRadius: 8,
-          borderColor: "#e2e8f0",
-          background: "#ffffff",
-        }}
-      >
-        <Space direction="vertical" size="middle" style={{ width: "100%" }}>
-          {/* Selector de alcance exclusivo para Administrador */}
-          {isAdmin && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                flexWrap: "wrap",
-                gap: 12,
-                paddingBottom: 8,
-                borderBottom: "1px solid #f1f5f9",
-              }}
-            >
-              <Space>
-                <Text strong style={{ fontSize: 13, color: "#475569" }}>
-                  Visualizar:
-                </Text>
+      {/* Barra de Control Compacta y Unificada (KPIs Chips + Segmented + Filtros) */}
+      <Card size="small" styles={{ body: { padding: "10px 14px" } }}>
+        <Space direction="vertical" size="small" style={{ width: "100%" }}>
+          {/* Fila 1: Segmented (si es admin) + KPIs Chips y totalizador */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <Space size={8} wrap align="center">
+              {isAdmin && (
                 <Segmented
+                  size="small"
                   value={adminScope}
                   onChange={(val) => {
                     setAdminScope(val as "all" | "mine");
@@ -599,66 +533,85 @@ export function InstancesPage() {
                   }}
                   options={[
                     {
-                      label: "Todas las solicitudes",
+                      label: "Todas",
                       value: "all",
                       icon: <ApartmentOutlined />,
                     },
                     {
-                      label: "Solo mis solicitudes",
+                      label: "Solo mías",
                       value: "mine",
                       icon: <UserOutlined />,
                     },
                   ]}
                 />
-              </Space>
+              )}
 
-              <Tag color="purple">
-                Rol: {user?.roles?.join(", ") || "Administrador"}
+              <Tag color="blue" style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}>
+                Total: <strong>{totalCount}</strong>
               </Tag>
-            </div>
-          )}
+              <Tag color="green" style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}>
+                En curso: <strong>{inProgressCount}</strong>
+              </Tag>
+              <Tag color="purple" style={{ margin: 0, fontSize: 11, padding: "1px 8px" }}>
+                Tipos de trámite: <strong>{totalCatalogProcesses}</strong>
+              </Tag>
+            </Space>
 
-          <Space
-            wrap
-            style={{ width: "100%", justifyContent: "space-between" }}
-            align="center"
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              Solicitudes encontradas: <Text strong>{data?.total ?? 0}</Text>
+            </Text>
+          </div>
+
+          {/* Fila 2: Filtros Compactos */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+              paddingTop: 4,
+            }}
           >
-            <Space wrap size="middle">
+            <Space size="small" wrap>
               <Input
-                placeholder="Buscar por código de solicitud (ej: SOL-001)..."
+                size="small"
+                placeholder="Buscar código (ej: SOL-001)..."
                 value={businessKeyInput}
                 onChange={(e) => setBusinessKeyInput(e.target.value)}
                 onPressEnter={handleSearch}
-                style={{ width: 260 }}
+                style={{ width: 200 }}
                 allowClear
                 prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
               />
 
               <Select
+                size="small"
                 placeholder="Todos los tipos de trámites"
                 value={definitionKeyInput}
                 onChange={(val) => setDefinitionKeyInput(val)}
                 allowClear
                 showSearch
                 optionFilterProp="label"
-                style={{ width: 240 }}
+                style={{ width: 220 }}
                 options={processFilterOptions}
               />
 
-              {/* Filtro por solicitante: disponible para administradores que visualizan todo */}
               {isAdmin && adminScope === "all" && (
                 <Input
+                  size="small"
                   placeholder="Filtrar por solicitante..."
                   value={startedByInput}
                   onChange={(e) => setStartedByInput(e.target.value)}
                   onPressEnter={handleSearch}
-                  style={{ width: 200 }}
+                  style={{ width: 170 }}
                   allowClear
                   prefix={<UserOutlined style={{ color: "#94a3b8" }} />}
                 />
               )}
 
               <Button
+                size="small"
                 type="primary"
                 icon={<FilterOutlined />}
                 onClick={handleSearch}
@@ -667,16 +620,12 @@ export function InstancesPage() {
               </Button>
 
               {hasActiveFilters && (
-                <Button onClick={handleResetSearch}>
-                  Limpiar filtros
+                <Button size="small" onClick={handleResetSearch}>
+                  Limpiar
                 </Button>
               )}
             </Space>
-
-            <Text type="secondary" style={{ fontSize: 13 }}>
-              Solicitudes encontradas: <Text strong>{data?.total ?? 0}</Text>
-            </Text>
-          </Space>
+          </div>
         </Space>
       </Card>
 
@@ -690,6 +639,7 @@ export function InstancesPage() {
         }}
       >
         <Table<ProcessInstance>
+          size="small"
           rowKey="id"
           columns={columns}
           dataSource={data?.data ?? []}

@@ -41,6 +41,7 @@ import { useSearchParams } from "react-router-dom";
 import { useDefinitionsQuery } from "../../definitions";
 import { useProcessTaskAssignmentsQuery } from "../../keycloak-admin/hooks/useKeycloakAdminQueries";
 import { TaskAntecedentsViewer } from "../../tasks";
+import { PRGaf08MatrixViewer } from "../components/PRGaf08MatrixViewer";
 import {
   useAvailableProcessesQuery,
   useInstanceDetailQuery,
@@ -105,7 +106,7 @@ export function ProcessTrackingPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   // Pestaña activa del expediente
-  const [activeTab, setActiveTab] = useState<string>("tree");
+  const [activeTab, setActiveTab] = useState<string>("matrix");
 
   // Query de instancias del tipo de proceso seleccionado
   const {
@@ -554,6 +555,24 @@ export function ProcessTrackingPage() {
               activeKey={activeTab}
               onChange={setActiveTab}
               items={[
+                {
+                  key: "matrix",
+                  label: (
+                    <Space size="small">
+                      <ApartmentOutlined style={{ color: "#2563eb" }} />
+                      <span>Matriz Oficial PR-GAF-08</span>
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ padding: "8px 0" }}>
+                      <PRGaf08MatrixViewer
+                        instance={instanceDetail ?? null}
+                        historicTasks={historicTasks}
+                        variables={variables}
+                      />
+                    </div>
+                  ),
+                },
                 {
                   key: "tree",
                   label: (

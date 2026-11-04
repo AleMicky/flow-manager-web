@@ -2,6 +2,7 @@ import {
   FileTextOutlined,
   PaperClipOutlined,
   UploadOutlined,
+  UserOutlined,
 } from "@ant-design/icons";
 import {
   Button,
@@ -16,11 +17,50 @@ import {
 } from "antd";
 import { useState } from "react";
 import type { DynamicJsonSchema, FormPropertySchema } from "../types/tasks.types";
+import { useKeycloakUsersQuery } from "../../keycloak-admin/hooks/useKeycloakAdminQueries";
 
 const { Text } = Typography;
 
 interface DynamicFormRendererProps {
   schema: DynamicJsonSchema;
+}
+
+interface KeycloakUserSelectControlProps {
+  value?: string;
+  onChange?: (val?: string) => void;
+  placeholder?: string;
+}
+
+function KeycloakUserSelectControl({
+  value,
+  onChange,
+  placeholder,
+}: KeycloakUserSelectControlProps) {
+  const { data: usersData, isLoading } = useKeycloakUsersQuery({ max: 100 });
+  const options = (usersData?.data ?? []).map((u) => {
+    const fullName = [u.firstName, u.lastName].filter(Boolean).join(" ") || u.username;
+    return {
+      value: u.username || u.id,
+      label: `${fullName} (@${u.username})${u.email ? ` - ${u.email}` : ""}`,
+    };
+  });
+
+  return (
+    <Select
+      showSearch
+      loading={isLoading}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder || "Seleccionar funcionario encargado..."}
+      options={options}
+      filterOption={(input, option) =>
+        (option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+      }
+      allowClear
+      style={{ width: "100%" }}
+      suffixIcon={<UserOutlined style={{ color: "#3b82f6" }} />}
+    />
+  );
 }
 
 interface FileUploadControlProps {
@@ -105,6 +145,21 @@ export function DynamicFormRenderer({ schema }: DynamicFormRendererProps) {
   const requiredFields = new Set(schema.required ?? []);
 
   const renderFieldInput = (key: string, prop: FormPropertySchema) => {
+    // 0. Selector de Funcionario / Usuario de Keycloak
+    const isUserSelect =
+      prop.format === "user-select" ||
+      key.toLowerCase().includes("encargadocontratacion") ||
+      key.toLowerCase().includes("usuarioasignado") ||
+      (key.toLowerCase().endsWith("userid") && !key.toLowerCase().includes("start"));
+
+    if (isUserSelect) {
+      return (
+        <KeycloakUserSelectControl
+          placeholder={`Seleccionar funcionario para: ${prop.title ?? key}`}
+        />
+      );
+    }
+
     // 1. Selector de Enum (Opciones fijas)
     if (prop.enum && prop.enum.length > 0) {
       const options = prop.enum.map((val, idx) => ({

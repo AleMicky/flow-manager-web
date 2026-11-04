@@ -76,6 +76,7 @@ export function ApprovalDecisionModal({
     const internalDecisionKeys = Object.keys(props).filter(
       (k) =>
         k.toLowerCase().startsWith("aprobado") ||
+        k.toLowerCase().startsWith("vobo") ||
         k.toLowerCase() === "decisionfinal" ||
         k.toLowerCase() === "decision" ||
         k.toLowerCase() === "estadodecision",
@@ -143,7 +144,7 @@ export function ApprovalDecisionModal({
     // Sincronizar dinámicamente cualquier bandera de aprobación declarada en el esquema
     if (formDto?.schema?.properties) {
       for (const key of Object.keys(formDto.schema.properties)) {
-        if (key.toLowerCase().startsWith("aprobado")) {
+        if (key.toLowerCase().startsWith("aprobado") || key.toLowerCase().startsWith("vobo")) {
           dynamicFlags[key] = isApprove;
         }
         if (key === "decisionFinal") {
