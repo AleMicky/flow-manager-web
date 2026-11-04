@@ -159,7 +159,7 @@ export function AppSidebar({
                           {
                               key: "/configuracion",
                               icon: <SettingOutlined />,
-                              label: "Configuración",
+                              label: "Configuración de Flujos",
                           },
                       ],
                   },

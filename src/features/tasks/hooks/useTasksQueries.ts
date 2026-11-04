@@ -129,3 +129,69 @@ export function useCompleteTaskMutation() {
     },
   });
 }
+
+/**
+ * Consulta todos los formularios configurados para un proceso BPMN.
+ */
+export function useProcessFormsQuery(processKey?: string, enabled = true) {
+  return useQuery({
+    queryKey: TASKS_QUERY_KEYS.formsByProcess(processKey ?? ""),
+    queryFn: () => tasksService.getFormsByProcess(processKey!),
+    enabled: Boolean(processKey) && enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Consulta el formulario de una etapa específica por proceso y taskKey.
+ */
+export function useTaskFormByProcessTaskQuery(
+  processKey?: string,
+  taskKey?: string,
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: TASKS_QUERY_KEYS.formByProcessTask(
+      processKey ?? "",
+      taskKey ?? "",
+    ),
+    queryFn: () => tasksService.getFormByProcessAndTask(processKey!, taskKey!),
+    enabled: Boolean(processKey && taskKey) && enabled,
+    staleTime: 30_000,
+  });
+}
+
+/**
+ * Mutación para guardar o actualizar el formulario dinámico de una etapa BPMN.
+ */
+export function useSaveTaskFormMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      processKey,
+      taskKey,
+      payload,
+    }: {
+      processKey: string;
+      taskKey: string;
+      payload: {
+        title: string;
+        description?: string | null;
+        schema: Record<string, unknown>;
+        active?: boolean;
+      };
+    }) => tasksService.saveTaskForm(processKey, taskKey, payload),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: TASKS_QUERY_KEYS.formsByProcess(variables.processKey),
+      });
+      queryClient.invalidateQueries({
+        queryKey: TASKS_QUERY_KEYS.formByProcessTask(
+          variables.processKey,
+          variables.taskKey,
+        ),
+      });
+    },
+  });
+}

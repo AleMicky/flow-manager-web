@@ -2,11 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { KEYCLOAK_ADMIN_QUERY_KEYS } from "../constants/keycloak-admin.endpoints";
 import { keycloakAdminService } from "../services/keycloak-admin.service";
 import type {
+  AssignUserRolePayload,
   CreateKeycloakGroupPayload,
+  CreateKeycloakRolePayload,
   QueryKeycloakGroupsParams,
   QueryKeycloakRolesParams,
   QueryKeycloakUsersParams,
   UpdateKeycloakGroupPayload,
+  UpdateKeycloakRolePayload,
   UpsertTaskAssignmentPayload,
 } from "../types/keycloak-admin.types";
 
@@ -83,6 +86,52 @@ export function useRemoveUserFromGroupMutation() {
   });
 }
 
+export function useAssignUserRoleMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      userId,
+      payload,
+    }: {
+      userId: string;
+      payload: AssignUserRolePayload;
+    }) => keycloakAdminService.assignRoleToUser(userId, payload),
+    onSuccess: (_, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.userRoles(vars.userId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
+export function useRemoveUserRoleMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      userId,
+      roleName,
+      source,
+    }: {
+      userId: string;
+      roleName: string;
+      source?: "realm" | "client";
+    }) => keycloakAdminService.removeRoleFromUser(userId, roleName, source),
+    onSuccess: (_, vars) => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.userRoles(vars.userId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
 // ==========================================
 // ROLES
 // ==========================================
@@ -146,6 +195,58 @@ export function useKeycloakUsersByRoleQuery(
     enabled: Boolean(roleName) && enabled,
     staleTime: 30_000,
     retry: false,
+  });
+}
+
+export function useCreateKeycloakRoleMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: CreateKeycloakRolePayload) =>
+      keycloakAdminService.createRole(payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
+export function useUpdateKeycloakRoleMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      roleName,
+      payload,
+    }: {
+      roleName: string;
+      payload: UpdateKeycloakRolePayload;
+    }) => keycloakAdminService.updateRole(roleName, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
+  });
+}
+
+export function useDeleteKeycloakRoleMutation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      roleName,
+      source,
+    }: {
+      roleName: string;
+      source?: "realm" | "client";
+    }) => keycloakAdminService.deleteRole(roleName, source),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: KEYCLOAK_ADMIN_QUERY_KEYS.all,
+      });
+    },
   });
 }
 

@@ -15,8 +15,14 @@ export const TASKS_ENDPOINTS = {
   UNCLAIM: (id: string) => `/workflow/tasks/${encodeURIComponent(id)}/unclaim`,
   /** Completar tarea */
   COMPLETE: (id: string) => `/workflow/tasks/${encodeURIComponent(id)}/complete`,
-  /** Formulario dinámico asignado a la tarea */
+  /** Formulario dinámico asignado a la tarea en tiempo de ejecución */
   FORM: (taskId: string) => `/workflow/forms/task/${encodeURIComponent(taskId)}`,
+  /** Formularios configurados para un proceso */
+  FORMS_BY_PROCESS: (processKey: string) =>
+    `/workflow/forms/process/${encodeURIComponent(processKey)}`,
+  /** Formulario de una etapa específica por proceso y tarea */
+  FORM_BY_PROCESS_TASK: (processKey: string, taskKey: string) =>
+    `/workflow/forms/process/${encodeURIComponent(processKey)}/task/${encodeURIComponent(taskKey)}`,
 } as const;
 
 export const TASKS_QUERY_KEYS = {
@@ -31,4 +37,8 @@ export const TASKS_QUERY_KEYS = {
     [...TASKS_QUERY_KEYS.all, "variables", id] as const,
   form: (taskId: string) =>
     [...TASKS_QUERY_KEYS.all, "form", taskId] as const,
+  formsByProcess: (processKey: string) =>
+    [...TASKS_QUERY_KEYS.all, "forms-by-process", processKey] as const,
+  formByProcessTask: (processKey: string, taskKey: string) =>
+    [...TASKS_QUERY_KEYS.all, "form-by-process-task", processKey, taskKey] as const,
 } as const;

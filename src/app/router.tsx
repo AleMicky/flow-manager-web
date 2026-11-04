@@ -8,7 +8,7 @@ import { DefinitionsPage } from "../features/definitions";
 import { InstancesPage } from "../features/instances";
 import { TasksPage } from "../features/tasks";
 import { ApprovalsPage } from "../features/approvals";
-import { KeycloakAdminPage } from "../features/keycloak-admin";
+import { KeycloakAdminPage, WorkflowConfigPage } from "../features/keycloak-admin";
 import { UserProfilePage } from "../features/profile";
 import { NotFoundPage } from "../features/common";
 
@@ -54,7 +54,7 @@ export const router = createBrowserRouter([
                     },
                     {
                         path: "configuracion",
-                        element: <KeycloakAdminPage />,
+                        element: <WorkflowConfigPage />,
                     },
                     {
                         path: "perfil",

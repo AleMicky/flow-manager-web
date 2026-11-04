@@ -34,6 +34,23 @@ export interface KeycloakRoleRepresentation {
   containerId?: string;
 }
 
+export interface CreateKeycloakRolePayload {
+  name: string;
+  description?: string;
+  source?: "realm" | "client";
+}
+
+export interface UpdateKeycloakRolePayload {
+  name?: string;
+  description?: string;
+  source?: "realm" | "client";
+}
+
+export interface AssignUserRolePayload {
+  roleName: string;
+  source?: "realm" | "client";
+}
+
 export interface KeycloakCandidateRole {
   id: string;
   name: string;

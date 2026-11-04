@@ -1,8 +1,10 @@
 import { api } from "../../../services/api";
 import { KEYCLOAK_ADMIN_ENDPOINTS } from "../constants/keycloak-admin.endpoints";
 import type {
+  AssignUserRolePayload,
   BpmnUserTaskAssignmentView,
   CreateKeycloakGroupPayload,
+  CreateKeycloakRolePayload,
   KeycloakAdminUser,
   KeycloakCandidateRole,
   KeycloakGroupRepresentation,
@@ -13,6 +15,7 @@ import type {
   QueryKeycloakRolesParams,
   QueryKeycloakUsersParams,
   UpdateKeycloakGroupPayload,
+  UpdateKeycloakRolePayload,
   UpsertTaskAssignmentPayload,
 } from "../types/keycloak-admin.types";
 
@@ -64,6 +67,27 @@ export const keycloakAdminService = {
     );
   },
 
+  async assignRoleToUser(
+    userId: string,
+    payload: AssignUserRolePayload,
+  ): Promise<void> {
+    await api.post<void>(
+      KEYCLOAK_ADMIN_ENDPOINTS.USER_ROLE_ASSIGN(userId),
+      payload,
+    );
+  },
+
+  async removeRoleFromUser(
+    userId: string,
+    roleName: string,
+    source?: "realm" | "client",
+  ): Promise<void> {
+    await api.delete<void>(
+      KEYCLOAK_ADMIN_ENDPOINTS.USER_ROLE_REMOVE(userId, roleName),
+      { params: source ? { source } : undefined },
+    );
+  },
+
   // ==========================================
   // ROLES (CANDIDATE GROUPS BPMN)
   // ==========================================
@@ -72,10 +96,34 @@ export const keycloakAdminService = {
     params?: QueryKeycloakRolesParams,
   ): Promise<KeycloakCandidateRole[]> {
     const response = await api.get<KeycloakCandidateRole[]>(
-      KEYCLOAK_ADMIN_ENDPOINTS.ROLES_CANDIDATES,
+      KEYCLOAK_ADMIN_ENDPOINTS.ROLES,
       { params },
     );
     return response.data;
+  },
+
+  async createRole(payload: CreateKeycloakRolePayload): Promise<void> {
+    await api.post<void>(KEYCLOAK_ADMIN_ENDPOINTS.ROLES, payload);
+  },
+
+  async updateRole(
+    roleName: string,
+    payload: UpdateKeycloakRolePayload,
+  ): Promise<void> {
+    await api.put<void>(
+      KEYCLOAK_ADMIN_ENDPOINTS.ROLE_BY_NAME(roleName),
+      payload,
+    );
+  },
+
+  async deleteRole(
+    roleName: string,
+    source?: "realm" | "client",
+  ): Promise<void> {
+    await api.delete<void>(
+      KEYCLOAK_ADMIN_ENDPOINTS.ROLE_BY_NAME(roleName),
+      { params: source ? { source } : undefined },
+    );
   },
 
   async getRealmRoles(

@@ -22,13 +22,17 @@ import {
   message,
 } from "antd";
 import { useState } from "react";
+import { getErrorMessage } from "../../common";
 import {
+  useAssignUserRoleMutation,
   useAssignUserToGroupMutation,
+  useKeycloakCandidateRolesQuery,
   useKeycloakGroupsQuery,
   useKeycloakUserDetailQuery,
   useKeycloakUserGroupsQuery,
   useKeycloakUserRolesQuery,
   useRemoveUserFromGroupMutation,
+  useRemoveUserRoleMutation,
 } from "../hooks/useKeycloakAdminQueries";
 
 const { Text, Title } = Typography;
@@ -45,6 +49,9 @@ export function UserDetailDrawer({
   onClose,
 }: UserDetailDrawerProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(
+    undefined,
+  );
+  const [selectedRoleKey, setSelectedRoleKey] = useState<string | undefined>(
     undefined,
   );
   const isEnabled = open && Boolean(userId);
@@ -66,8 +73,15 @@ export function UserDetailDrawer({
     isEnabled,
   );
 
+  const { data: allCandidateRoles } = useKeycloakCandidateRolesQuery(
+    { first: 0, max: 200 },
+    isEnabled,
+  );
+
   const assignGroupMutation = useAssignUserToGroupMutation();
   const removeGroupMutation = useRemoveUserFromGroupMutation();
+  const assignRoleMutation = useAssignUserRoleMutation();
+  const removeRoleMutation = useRemoveUserRoleMutation();
 
   const isLoading = loadingUser || loadingRoles || loadingGroups;
 
@@ -75,6 +89,18 @@ export function UserDetailDrawer({
   const availableGroups = (allGroups ?? []).filter(
     (g) => !assignedGroupIds.has(g.id),
   );
+
+  const userClientRoleNames = new Set(
+    (rolesData?.clientRoles ?? []).map((r) => r.name),
+  );
+  const userRealmRoleNames = new Set(
+    (rolesData?.realmRoles ?? []).map((r) => r.name),
+  );
+
+  const availableRoles = (allCandidateRoles ?? []).filter((r) => {
+    if (r.source === "client") return !userClientRoleNames.has(r.name);
+    return !userRealmRoleNames.has(r.name);
+  });
 
   const handleAssignGroup = async () => {
     if (!userId || !selectedGroupId) return;
@@ -86,15 +112,7 @@ export function UserDetailDrawer({
       setSelectedGroupId(undefined);
       message.success("Usuario asignado al grupo correctamente");
     } catch (err: unknown) {
-      const axErr = err as {
-        response?: { data?: { message?: string } };
-        message?: string;
-      };
-      message.error(
-        axErr.response?.data?.message ||
-          axErr.message ||
-          "No se pudo asignar el usuario al grupo",
-      );
+      message.error(getErrorMessage(err, "No se pudo asignar el usuario al grupo"));
     }
   };
 
@@ -104,15 +122,42 @@ export function UserDetailDrawer({
       await removeGroupMutation.mutateAsync({ userId, groupId });
       message.success("Usuario removido del grupo");
     } catch (err: unknown) {
-      const axErr = err as {
-        response?: { data?: { message?: string } };
-        message?: string;
-      };
-      message.error(
-        axErr.response?.data?.message ||
-          axErr.message ||
-          "No se pudo quitar el usuario del grupo",
-      );
+      message.error(getErrorMessage(err, "No se pudo quitar el usuario del grupo"));
+    }
+  };
+
+  const handleAssignRole = async () => {
+    if (!userId || !selectedRoleKey) return;
+    const [source, roleName] = selectedRoleKey.split(":");
+    try {
+      await assignRoleMutation.mutateAsync({
+        userId,
+        payload: {
+          roleName,
+          source: source as "client" | "realm",
+        },
+      });
+      setSelectedRoleKey(undefined);
+      message.success(`Rol "${roleName}" asignado correctamente`);
+    } catch (err: unknown) {
+      message.error(getErrorMessage(err, "No se pudo asignar el rol al usuario"));
+    }
+  };
+
+  const handleRemoveRole = async (
+    roleName: string,
+    source: "realm" | "client",
+  ) => {
+    if (!userId) return;
+    try {
+      await removeRoleMutation.mutateAsync({
+        userId,
+        roleName,
+        source,
+      });
+      message.success(`Rol "${roleName}" removido del usuario`);
+    } catch (err: unknown) {
+      message.error(getErrorMessage(err, "No se pudo remover el rol del usuario"));
     }
   };
 
@@ -275,6 +320,31 @@ export function UserDetailDrawer({
               Roles Asignados (Candidate Groups BPMN)
             </Title>
 
+            <Space style={{ width: "100%", marginBottom: 12 }} wrap>
+              <Select
+                placeholder="Seleccionar rol para asignar..."
+                value={selectedRoleKey}
+                onChange={setSelectedRoleKey}
+                style={{ width: 320 }}
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                options={availableRoles.map((r) => ({
+                  value: `${r.source}:${r.name}`,
+                  label: `${r.name} (${r.source === "client" ? "Cliente" : "Realm"})`,
+                }))}
+              />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                disabled={!selectedRoleKey}
+                loading={assignRoleMutation.isPending}
+                onClick={handleAssignRole}
+              >
+                Asignar rol
+              </Button>
+            </Space>
+
             <Descriptions bordered size="small" column={1}>
               <Descriptions.Item label="Roles Efectivos">
                 {rolesData?.effectiveRoles?.length ? (
@@ -299,8 +369,33 @@ export function UserDetailDrawer({
                 {rolesData?.clientRoles?.length ? (
                   <Space wrap size={[4, 8]}>
                     {rolesData.clientRoles.map((role) => (
-                      <Tag color="blue" key={role.id}>
-                        {role.name}
+                      <Tag
+                        color="blue"
+                        key={role.id || role.name}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "2px 8px",
+                        }}
+                      >
+                        <span>{role.name}</span>
+                        <Popconfirm
+                          title="¿Quitar rol de cliente?"
+                          description={`Se desvinculará "${role.name}" del usuario.`}
+                          okText="Sí, quitar"
+                          cancelText="No"
+                          onConfirm={() => handleRemoveRole(role.name, "client")}
+                        >
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            loading={removeRoleMutation.isPending}
+                            style={{ padding: 0, height: 16, width: 16 }}
+                          />
+                        </Popconfirm>
                       </Tag>
                     ))}
                   </Space>
@@ -313,8 +408,33 @@ export function UserDetailDrawer({
                 {rolesData?.realmRoles?.length ? (
                   <Space wrap size={[4, 8]}>
                     {rolesData.realmRoles.map((role) => (
-                      <Tag color="purple" key={role.id}>
-                        {role.name}
+                      <Tag
+                        color="purple"
+                        key={role.id || role.name}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          padding: "2px 8px",
+                        }}
+                      >
+                        <span>{role.name}</span>
+                        <Popconfirm
+                          title="¿Quitar rol del realm?"
+                          description={`Se desvinculará "${role.name}" del usuario.`}
+                          okText="Sí, quitar"
+                          cancelText="No"
+                          onConfirm={() => handleRemoveRole(role.name, "realm")}
+                        >
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            loading={removeRoleMutation.isPending}
+                            style={{ padding: 0, height: 16, width: 16 }}
+                          />
+                        </Popconfirm>
                       </Tag>
                     ))}
                   </Space>

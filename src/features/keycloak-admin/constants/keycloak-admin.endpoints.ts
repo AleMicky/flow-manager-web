@@ -14,8 +14,17 @@ export const KEYCLOAK_ADMIN_ENDPOINTS = {
   USER_GROUP_MEMBERSHIP: (userId: string, groupId: string) =>
     `/keycloak-admin/users/${encodeURIComponent(userId)}/groups/${encodeURIComponent(groupId)}`,
 
-  /** Roles candidatos combinados (cliente + realm) para BPMN */
-  ROLES_CANDIDATES: "/keycloak-admin/roles",
+  /** Roles candidatos combinados (cliente + realm) para BPMN / Crear rol */
+  ROLES: "/keycloak-admin/roles",
+  /** Detalle, edición y eliminación de rol por nombre */
+  ROLE_BY_NAME: (roleName: string) =>
+    `/keycloak-admin/roles/${encodeURIComponent(roleName)}`,
+  /** Asignar rol a usuario (POST) */
+  USER_ROLE_ASSIGN: (userId: string) =>
+    `/keycloak-admin/users/${encodeURIComponent(userId)}/roles`,
+  /** Quitar rol a usuario (DELETE) */
+  USER_ROLE_REMOVE: (userId: string, roleName: string) =>
+    `/keycloak-admin/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleName)}`,
   /** Roles del realm */
   ROLES_REALM: "/keycloak-admin/roles/realm",
   /** Roles del cliente */

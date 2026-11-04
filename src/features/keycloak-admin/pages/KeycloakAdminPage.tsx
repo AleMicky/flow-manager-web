@@ -1,5 +1,4 @@
 import {
-  ApartmentOutlined,
   CheckCircleOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -8,19 +7,26 @@ import {
   ReloadOutlined,
   SafetyCertificateOutlined,
   SearchOutlined,
+  SettingOutlined,
+  StopOutlined,
   TeamOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import {
   Alert,
+  Avatar,
   Badge,
   Button,
   Card,
+  Col,
+  Empty,
   Input,
   Popconfirm,
   Radio,
+  Row,
   Select,
   Space,
+  Statistic,
   Table,
   Tabs,
   Tag,
@@ -29,14 +35,17 @@ import {
   message,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import { useState } from "react";
-import { BpmnTaskAssignmentsTab } from "../components/BpmnTaskAssignmentsTab";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { getErrorMessage } from "../../common";
 import { GroupDetailDrawer } from "../components/GroupDetailDrawer";
 import { GroupFormModal } from "../components/GroupFormModal";
+import { RoleFormModal, type RoleFormData } from "../components/RoleFormModal";
 import { RoleUsersDrawer } from "../components/RoleUsersDrawer";
 import { UserDetailDrawer } from "../components/UserDetailDrawer";
 import {
   useDeleteKeycloakGroupMutation,
+  useDeleteKeycloakRoleMutation,
   useKeycloakCandidateRolesQuery,
   useKeycloakClientRolesQuery,
   useKeycloakGroupsQuery,
@@ -52,7 +61,7 @@ import type {
 
 const { Title, Paragraph, Text } = Typography;
 
-type ActiveTab = "users" | "groups" | "bpmn-assignments" | "roles";
+type ActiveTab = "users" | "groups" | "roles";
 type RoleScope = "candidates" | "client" | "realm";
 
 interface UnifiedRoleRow {
@@ -64,7 +73,32 @@ interface UnifiedRoleRow {
 }
 
 export function KeycloakAdminPage() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>("users");
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as ActiveTab | null;
+
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    if (tabParam && ["users", "groups", "roles"].includes(tabParam)) {
+      return tabParam;
+    }
+    return "users";
+  });
+
+  useEffect(() => {
+    if (
+      tabParam &&
+      ["users", "groups", "roles"].includes(tabParam) &&
+      tabParam !== activeTab
+    ) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam, activeTab]);
+
+  const handleTabChange = (k: string) => {
+    const nextTab = k as ActiveTab;
+    setActiveTab(nextTab);
+    setSearchParams({ tab: nextTab });
+  };
 
   // Filtros y paginación: Usuarios
   const [userSearchInput, setUserSearchInput] = useState("");
@@ -86,7 +120,10 @@ export function KeycloakAdminPage() {
 
   // Drawers
   const [userDrawerId, setUserDrawerId] = useState<string | null>(null);
-  const [roleDrawerName, setRoleDrawerName] = useState<string | null>(null);
+  const [roleDrawer, setRoleDrawer] = useState<{
+    name: string;
+    source: "realm" | "client";
+  } | null>(null);
   const [groupDrawerId, setGroupDrawerId] = useState<string | null>(null);
 
   // Modal Crear / Editar Grupo
@@ -95,8 +132,15 @@ export function KeycloakAdminPage() {
     group: KeycloakGroupRepresentation | null;
   }>({ open: false, group: null });
 
-  // Mutation Eliminar Grupo
+  // Modal Crear / Editar Rol
+  const [roleModal, setRoleModal] = useState<{
+    open: boolean;
+    role: RoleFormData | null;
+  }>({ open: false, role: null });
+
+  // Mutation Eliminar Grupo y Rol
   const deleteGroupMutation = useDeleteKeycloakGroupMutation();
+  const deleteRoleMutation = useDeleteKeycloakRoleMutation();
 
   // Queries: Usuarios
   const usersQuery = useKeycloakUsersQuery({
@@ -155,17 +199,21 @@ export function KeycloakAdminPage() {
   const handleDeleteGroup = async (id: string) => {
     try {
       await deleteGroupMutation.mutateAsync(id);
-      message.success("Grupo eliminado de Keycloak");
+      message.success("Grupo eliminado de Keycloak exitosamente");
     } catch (err: unknown) {
-      const axErr = err as {
-        response?: { data?: { message?: string } };
-        message?: string;
-      };
-      message.error(
-        axErr.response?.data?.message ||
-          axErr.message ||
-          "No se pudo eliminar el grupo",
-      );
+      message.error(getErrorMessage(err, "No se pudo eliminar el grupo"));
+    }
+  };
+
+  const handleDeleteRole = async (
+    roleName: string,
+    source: "realm" | "client",
+  ) => {
+    try {
+      await deleteRoleMutation.mutateAsync({ roleName, source });
+      message.success(`Rol "${roleName}" eliminado de Keycloak exitosamente`);
+    } catch (err: unknown) {
+      message.error(getErrorMessage(err, "No se pudo eliminar el rol"));
     }
   };
 
@@ -217,28 +265,56 @@ export function KeycloakAdminPage() {
         ? clientRolesQuery.isLoading
         : realmRolesQuery.isLoading;
 
-  // Columnas: Usuarios (Solo lectura + Asignación de Grupos)
+  const getInitials = (name?: string, username?: string) => {
+    const str = (name || username || "U").trim();
+    const parts = str.split(" ");
+    if (parts.length >= 2 && parts[0] && parts[1]) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return str.slice(0, 2).toUpperCase();
+  };
+
+  // Columnas: Usuarios
   const userColumns: ColumnsType<KeycloakAdminUser> = [
     {
       title: "Usuario",
       dataIndex: "fullName",
       key: "fullName",
       render: (fullName: string, record) => (
-        <div>
-          <Space>
-            <UserOutlined style={{ color: "#3b82f6" }} />
-            <Text strong style={{ fontSize: 14 }}>
-              {fullName}
-            </Text>
-            <Tag color="blue">@{record.username}</Tag>
-          </Space>
-          <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
-            UUID BPMN:{" "}
-            <Text copyable style={{ fontSize: 11, color: "#64748b" }}>
-              {record.id}
-            </Text>
+        <Space align="center" size="middle">
+          <Avatar
+            style={{
+              backgroundColor: record.enabled ? "#eff6ff" : "#f1f5f9",
+              color: record.enabled ? "#2563eb" : "#94a3b8",
+              border: `1px solid ${record.enabled ? "#bfdbfe" : "#cbd5e1"}`,
+              fontWeight: 600,
+              fontSize: 12,
+            }}
+          >
+            {getInitials(fullName, record.username)}
+          </Avatar>
+          <div>
+            <Space>
+              <Text strong style={{ fontSize: 14 }}>
+                {fullName || record.username}
+              </Text>
+              <Tag color="blue">@{record.username}</Tag>
+            </Space>
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+              UUID BPMN:{" "}
+              <Text
+                copyable
+                style={{
+                  fontSize: 11,
+                  color: "#64748b",
+                  fontFamily: "monospace",
+                }}
+              >
+                {record.id}
+              </Text>
+            </div>
           </div>
-        </div>
+        </Space>
       ),
     },
     {
@@ -266,9 +342,21 @@ export function KeycloakAdminPage() {
       width: 120,
       render: (enabled: boolean) =>
         enabled ? (
-          <Badge status="success" text="Activo" />
+          <Tag
+            icon={<CheckCircleOutlined />}
+            color="success"
+            style={{ borderRadius: 10 }}
+          >
+            Activo
+          </Tag>
         ) : (
-          <Badge status="default" text="Inactivo" />
+          <Tag
+            icon={<StopOutlined />}
+            color="default"
+            style={{ borderRadius: 10 }}
+          >
+            Inactivo
+          </Tag>
         ),
     },
     {
@@ -335,21 +423,61 @@ export function KeycloakAdminPage() {
     {
       title: "Acciones",
       key: "actions",
-      width: 160,
+      width: 230,
       fixed: "right",
       render: (_, record) => (
-        <Button
-          size="small"
-          icon={<TeamOutlined />}
-          onClick={() => setRoleDrawerName(record.name)}
-        >
-          Ver Usuarios
-        </Button>
+        <Space size="small">
+          <Button
+            size="small"
+            icon={<TeamOutlined />}
+            onClick={() =>
+              setRoleDrawer({ name: record.name, source: record.source })
+            }
+          >
+            Usuarios
+          </Button>
+
+          <Tooltip title="Editar rol">
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() =>
+                setRoleModal({
+                  open: true,
+                  role: {
+                    id: record.id,
+                    name: record.name,
+                    description: record.description,
+                    source: record.source,
+                  },
+                })
+              }
+            />
+          </Tooltip>
+
+          <Popconfirm
+            title="¿Eliminar este rol?"
+            description={`Se eliminará el rol "${record.name}" en Keycloak.`}
+            okText="Sí, eliminar"
+            cancelText="Cancelar"
+            okButtonProps={{ danger: true }}
+            onConfirm={() => handleDeleteRole(record.name, record.source)}
+          >
+            <Tooltip title="Eliminar rol">
+              <Button
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                loading={deleteRoleMutation.isPending}
+              />
+            </Tooltip>
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
 
-  // Columnas: Grupos (Crear, Editar, Eliminar y Miembros)
+  // Columnas: Grupos
   const groupColumns: ColumnsType<KeycloakGroupRepresentation> = [
     {
       title: "Grupo",
@@ -461,43 +589,115 @@ export function KeycloakAdminPage() {
             Directorio Keycloak (Usuarios, Roles y Grupos)
           </Title>
           <Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
-            Consulta usuarios, gestiona grupos organizacionales y asigna
-            usuarios a grupos para tareas BPMN.
+            Consulta usuarios, gestiona grupos organizacionales y administra los roles de aplicación de Keycloak.
           </Paragraph>
         </div>
 
         <Space wrap>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setGroupModal({ open: true, group: null })}
-          >
-            Nuevo Grupo
-          </Button>
+          {activeTab === "roles" && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setRoleModal({ open: true, role: null })}
+            >
+              Nuevo Rol
+            </Button>
+          )}
+          {activeTab === "groups" && (
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setGroupModal({ open: true, group: null })}
+            >
+              Nuevo Grupo
+            </Button>
+          )}
           <Button
             icon={<ReloadOutlined spin={isFetchingCurrent} />}
             onClick={handleRefresh}
           >
             Actualizar
           </Button>
+          <Button
+            icon={<SettingOutlined />}
+            onClick={() => navigate("/configuracion")}
+          >
+            Configuración de Flujos
+          </Button>
         </Space>
       </div>
+
+      {/* Tarjetas Resumen / KPIs de Identidad */}
+      <Row gutter={[16, 16]}>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic
+              title={<span style={{ fontSize: 12 }}>Total Usuarios</span>}
+              value={usersQuery.data?.total ?? 0}
+              prefix={<UserOutlined style={{ color: "#3b82f6" }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 600 }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic
+              title={<span style={{ fontSize: 12 }}>Grupos Organizacionales</span>}
+              value={groupsQuery.data?.length ?? 0}
+              prefix={<TeamOutlined style={{ color: "#10b981" }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 600, color: "#10b981" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic
+              title={<span style={{ fontSize: 12 }}>Roles Candidatos BPMN</span>}
+              value={candidateRolesQuery.data?.length ?? 0}
+              prefix={<SafetyCertificateOutlined style={{ color: "#8b5cf6" }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 600, color: "#8b5cf6" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <div
+              style={{
+                color: "rgba(0, 0, 0, 0.45)",
+                fontSize: 12,
+                marginBottom: 4,
+              }}
+            >
+              Asignación a Procesos
+            </div>
+            <div style={{ marginTop: 4 }}>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: "auto", fontSize: 13 }}
+                icon={<SettingOutlined />}
+                onClick={() => navigate("/configuracion")}
+              >
+                Mapear tareas BPMN →
+              </Button>
+            </div>
+          </Card>
+        </Col>
+      </Row>
 
       {usersQuery.isError && (
         <Alert
           type="error"
           showIcon
-          title="Error al conectar con Keycloak Admin REST API"
-          description={
-            (
-              usersQuery.error as {
-                response?: { data?: { message?: string } };
-                message?: string;
-              }
-            )?.response?.data?.message ||
-            (usersQuery.error instanceof Error
-              ? usersQuery.error.message
-              : "Verifica que el cliente tenga habilitado 'Service accounts roles' en Keycloak o configura KEYCLOAK_ADMIN_USERNAME / KEYCLOAK_ADMIN_PASSWORD en .env.")
+          message="Error al conectar con Keycloak Admin REST API"
+          description={getErrorMessage(
+            usersQuery.error,
+            "Verifica que el servicio de Keycloak esté en línea o que las credenciales de administración sean válidas.",
+          )}
+          action={
+            <Button size="small" danger onClick={() => handleRefresh()}>
+              Reintentar
+            </Button>
           }
         />
       )}
@@ -506,7 +706,7 @@ export function KeycloakAdminPage() {
       <Card styles={{ body: { padding: "16px 24px" } }}>
         <Tabs
           activeKey={activeTab}
-          onChange={(k) => setActiveTab(k as ActiveTab)}
+          onChange={handleTabChange}
           items={[
             {
               key: "users",
@@ -529,7 +729,14 @@ export function KeycloakAdminPage() {
                     <Input
                       placeholder="Buscar por nombre, usuario o correo..."
                       value={userSearchInput}
-                      onChange={(e) => setUserSearchInput(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setUserSearchInput(val);
+                        if (!val.trim()) {
+                          setAppliedUserSearch("");
+                          setUserPage(1);
+                        }
+                      }}
                       onPressEnter={() => {
                         setUserPage(1);
                         setAppliedUserSearch(userSearchInput.trim());
@@ -580,6 +787,32 @@ export function KeycloakAdminPage() {
                     dataSource={usersQuery.data?.data ?? []}
                     loading={usersQuery.isLoading}
                     scroll={{ x: 760 }}
+                    locale={{
+                      emptyText:
+                        appliedUserSearch || userEnabledFilter !== "all" ? (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="No se encontraron usuarios que coincidan con los filtros aplicados"
+                          >
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                setUserSearchInput("");
+                                setAppliedUserSearch("");
+                                setUserEnabledFilter("all");
+                                setUserPage(1);
+                              }}
+                            >
+                              Limpiar filtros
+                            </Button>
+                          </Empty>
+                        ) : (
+                          <Empty
+                            image={Empty.PRESENTED_IMAGE_SIMPLE}
+                            description="No hay usuarios registrados en el realm de Keycloak"
+                          />
+                        ),
+                    }}
                     pagination={{
                       current: userPage,
                       pageSize: userPageSize,
@@ -635,7 +868,13 @@ export function KeycloakAdminPage() {
                       <Input
                         placeholder="Filtrar roles por nombre..."
                         value={roleSearchInput}
-                        onChange={(e) => setRoleSearchInput(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setRoleSearchInput(val);
+                          if (!val.trim()) {
+                            setAppliedRoleSearch("");
+                          }
+                        }}
                         onPressEnter={() =>
                           setAppliedRoleSearch(roleSearchInput.trim())
                         }
@@ -670,6 +909,29 @@ export function KeycloakAdminPage() {
                     dataSource={roleRows}
                     loading={loadingRoles}
                     scroll={{ x: 760 }}
+                    locale={{
+                      emptyText: appliedRoleSearch ? (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description={`No se encontraron roles que coincidan con "${appliedRoleSearch}"`}
+                        >
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setRoleSearchInput("");
+                              setAppliedRoleSearch("");
+                            }}
+                          >
+                            Limpiar búsqueda
+                          </Button>
+                        </Empty>
+                      ) : (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description="No se encontraron roles en este ámbito"
+                        />
+                      ),
+                    }}
                     pagination={{
                       pageSize: 10,
                       showSizeChanger: true,
@@ -697,7 +959,13 @@ export function KeycloakAdminPage() {
                       <Input
                         placeholder="Buscar grupo por nombre..."
                         value={groupSearchInput}
-                        onChange={(e) => setGroupSearchInput(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setGroupSearchInput(val);
+                          if (!val.trim()) {
+                            setAppliedGroupSearch("");
+                          }
+                        }}
                         onPressEnter={() =>
                           setAppliedGroupSearch(groupSearchInput.trim())
                         }
@@ -732,6 +1000,38 @@ export function KeycloakAdminPage() {
                     dataSource={groupsQuery.data ?? []}
                     loading={groupsQuery.isLoading}
                     scroll={{ x: 820 }}
+                    locale={{
+                      emptyText: appliedGroupSearch ? (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description={`No se encontraron grupos que coincidan con "${appliedGroupSearch}"`}
+                        >
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setGroupSearchInput("");
+                              setAppliedGroupSearch("");
+                            }}
+                          >
+                            Limpiar búsqueda
+                          </Button>
+                        </Empty>
+                      ) : (
+                        <Empty
+                          image={Empty.PRESENTED_IMAGE_SIMPLE}
+                          description="No hay grupos creados en Keycloak"
+                        >
+                          <Button
+                            type="primary"
+                            size="small"
+                            icon={<PlusOutlined />}
+                            onClick={() => setGroupModal({ open: true, group: null })}
+                          >
+                            Crear primer grupo
+                          </Button>
+                        </Empty>
+                      ),
+                    }}
                     pagination={{
                       pageSize: 10,
                       showSizeChanger: true,
@@ -741,16 +1041,6 @@ export function KeycloakAdminPage() {
                   />
                 </div>
               ),
-            },
-            {
-              key: "bpmn-assignments",
-              label: (
-                <Space>
-                  <ApartmentOutlined />
-                  <span>Asignación a Tareas BPMN (Flowable)</span>
-                </Space>
-              ),
-              children: <BpmnTaskAssignmentsTab />,
             },
           ]}
         />
@@ -763,6 +1053,13 @@ export function KeycloakAdminPage() {
         onClose={() => setGroupModal({ open: false, group: null })}
       />
 
+      {/* Modal: Crear / Editar Rol */}
+      <RoleFormModal
+        open={roleModal.open}
+        role={roleModal.role}
+        onClose={() => setRoleModal({ open: false, role: null })}
+      />
+
       {/* Drawer: Detalle de Usuario y Asignar/Quitar Grupos */}
       <UserDetailDrawer
         open={Boolean(userDrawerId)}
@@ -772,11 +1069,12 @@ export function KeycloakAdminPage() {
 
       {/* Drawer: Usuarios por Rol */}
       <RoleUsersDrawer
-        open={Boolean(roleDrawerName)}
-        roleName={roleDrawerName}
-        onClose={() => setRoleDrawerName(null)}
+        open={Boolean(roleDrawer)}
+        roleName={roleDrawer?.name ?? null}
+        roleSource={roleDrawer?.source}
+        onClose={() => setRoleDrawer(null)}
         onSelectUser={(uid) => {
-          setRoleDrawerName(null);
+          setRoleDrawer(null);
           setUserDrawerId(uid);
         }}
       />

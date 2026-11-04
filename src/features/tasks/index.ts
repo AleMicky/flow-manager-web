@@ -5,3 +5,5 @@ export * from "./hooks/useTasksQueries";
 export * from "./pages/TasksPage";
 export * from "./components/CompleteTaskModal";
 export * from "./components/TaskDetailDrawer";
+export * from "./components/DynamicFormRenderer";
+export * from "./components/TaskFormConfigModal";

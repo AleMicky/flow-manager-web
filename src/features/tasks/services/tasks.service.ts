@@ -104,7 +104,7 @@ export const tasksService = {
   },
 
   /**
-   * Obtiene el formulario dinámico asignado a la tarea (si existe).
+   * Obtiene el formulario dinámico asignado a la tarea en tiempo de ejecución (si existe).
    * Endpoint: GET /api/workflow/forms/task/:taskId
    */
   async getForm(taskId: string): Promise<WorkflowFormDto | null> {
@@ -114,5 +114,59 @@ export const tasksService = {
     } catch {
       return null;
     }
+  },
+
+  /**
+   * Obtiene todos los formularios configurados para un proceso BPMN.
+   * Endpoint: GET /workflow/forms/process/:processKey
+   */
+  async getFormsByProcess(processKey: string): Promise<WorkflowFormDto[]> {
+    try {
+      const response = await api.get<WorkflowFormDto[]>(
+        TASKS_ENDPOINTS.FORMS_BY_PROCESS(processKey),
+      );
+      return response.data;
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Obtiene el formulario de una etapa específica por proceso y taskDefinitionKey.
+   * Endpoint: GET /workflow/forms/process/:processKey/task/:taskKey
+   */
+  async getFormByProcessAndTask(
+    processKey: string,
+    taskKey: string,
+  ): Promise<WorkflowFormDto | null> {
+    try {
+      const response = await api.get<WorkflowFormDto>(
+        TASKS_ENDPOINTS.FORM_BY_PROCESS_TASK(processKey, taskKey),
+      );
+      return response.data;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Guarda o actualiza la configuración de un formulario para una etapa BPMN.
+   * Endpoint: PUT /workflow/forms/process/:processKey/task/:taskKey
+   */
+  async saveTaskForm(
+    processKey: string,
+    taskKey: string,
+    payload: {
+      title: string;
+      description?: string | null;
+      schema: Record<string, unknown>;
+      active?: boolean;
+    },
+  ): Promise<WorkflowFormDto> {
+    const response = await api.put<WorkflowFormDto>(
+      TASKS_ENDPOINTS.FORM_BY_PROCESS_TASK(processKey, taskKey),
+      payload,
+    );
+    return response.data;
   },
 };
