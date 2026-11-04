@@ -60,12 +60,12 @@ export function GroupDetailDrawer({
   const { data: members, isLoading: loadingMembers } =
     useKeycloakGroupMembersQuery(
       groupId ?? undefined,
-      { first: 0, max: 100 },
+      { first: 0, max: 1000 },
       isEnabled,
     );
 
   const { data: allUsersData } = useKeycloakUsersQuery(
-    isEnabled ? { first: 0, max: 100 } : undefined,
+    isEnabled ? { first: 0, max: 1000 } : undefined,
   );
 
   const assignMutation = useAssignUserToGroupMutation();

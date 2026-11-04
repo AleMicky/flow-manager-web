@@ -24,7 +24,9 @@ import {
   Radio,
   Select,
   Space,
+  Switch,
   Table,
+  Tabs,
   Tag,
   Tooltip,
   Typography,
@@ -97,7 +99,7 @@ export function BpmnTaskAssignmentsTab({
     }
   }, [initialProcessKey]);
 
-  const activeProcessKey = selectedProcessKey ?? uniqueProcesses[0]?.key;
+  const activeProcessKey = selectedProcessKey;
 
   // Definición activa para abrir el modal del diagrama BPMN
   const activeDefinition = useMemo(() => {
@@ -115,8 +117,11 @@ export function BpmnTaskAssignmentsTab({
   // Estado para el Modal de Configuración por Tarea
   const [editingTask, setEditingTask] =
     useState<BpmnUserTaskAssignmentView | null>(null);
-  const [modalGroups, setModalGroups] = useState<string[]>([]);
+  const [modalOrgGroups, setModalOrgGroups] = useState<string[]>([]);
+  const [modalKeycloakRoles, setModalKeycloakRoles] = useState<string[]>([]);
   const [modalUsers, setModalUsers] = useState<string[]>([]);
+  const [modalAssignToInitiator, setModalAssignToInitiator] = useState<boolean>(false);
+  const [activeModalTab, setActiveModalTab] = useState<string>("groups");
 
   // Estado para el Modal de Formulario de Etapa
   const [formConfigTask, setFormConfigTask] = useState<{
@@ -146,24 +151,25 @@ export function BpmnTaskAssignmentsTab({
 
   const { data: keycloakGroups } = useKeycloakGroupsQuery({
     first: 0,
-    max: 100,
+    max: 500,
   });
   const { data: keycloakRoles } = useKeycloakCandidateRolesQuery({
     first: 0,
-    max: 100,
+    max: 500,
   });
   const {
     data: keycloakUsers,
     isLoading: loadingUsers,
     isError: usersError,
+    refetch: refetchUsers,
   } = useKeycloakUsersQuery({
     first: 0,
-    max: 100,
+    max: 1000,
   });
 
   const upsertMutation = useUpsertTaskAssignmentMutation();
 
-  // Mapa rápido de usuarios para resolver tanto por ID como por username
+  // Mapa rápido de usuarios para resolver tanto por ID como por username o email
   const userMap = useMemo(() => {
     const map = new Map<
       string,
@@ -185,6 +191,9 @@ export function BpmnTaskAssignmentsTab({
       };
       map.set(u.id, item);
       map.set(u.username, item);
+      if (u.email) {
+        map.set(u.email, item);
+      }
     }
     return map;
   }, [keycloakUsers]);
@@ -268,6 +277,10 @@ export function BpmnTaskAssignmentsTab({
     }
 
     for (const u of task.candidateUsers) {
+      // Ignorar asignaciones dinámicas especiales de BPMN
+      if (u === "${initiator}" || u === "solicitante" || u.startsWith("${")) {
+        continue;
+      }
       const user = userMap.get(u);
       if (!user && keycloakUsers?.data) {
         warnings.push(`Usuario "${u}" no existe en Keycloak.`);
@@ -287,8 +300,14 @@ export function BpmnTaskAssignmentsTab({
     let withWarnings = 0;
 
     for (const t of taskAssignments ?? []) {
+      const isDynamic =
+        t.defaultAssignee === "${initiator}" ||
+        t.candidateUsers.includes("${initiator}") ||
+        t.candidateUsers.includes("solicitante") ||
+        Boolean(t.defaultAssignee?.startsWith("${"));
+
       const hasAssignment =
-        t.candidateGroups.length > 0 || t.candidateUsers.length > 0;
+        t.candidateGroups.length > 0 || t.candidateUsers.length > 0 || isDynamic;
       if (hasAssignment) {
         configured++;
       } else {
@@ -308,35 +327,37 @@ export function BpmnTaskAssignmentsTab({
     };
   }, [taskAssignments, roleHealthMap, userMap, keycloakUsers]);
 
-  // Opciones de grupos y roles agrupadas
-  const groupedGroupAndRoleOptions = useMemo(() => {
-    const roleOptions = (keycloakRoles ?? []).map((r) => ({
-      value: r.name,
-      label: `🛡️ ${r.name}${r.description ? ` (${r.description})` : ""}`,
-    }));
+  const knownRolesSet = useMemo(() => {
+    return new Set((keycloakRoles ?? []).map((r) => r.name));
+  }, [keycloakRoles]);
 
-    const groupOptions = (keycloakGroups ?? []).map((g) => ({
+  // Opciones separadas: Grupos Organizacionales de Keycloak
+  const groupOptions = useMemo(() => {
+    return (keycloakGroups ?? []).map((g) => ({
       value: g.name,
-      label: `👥 ${g.name} (${g.path})`,
+      label: `🏢 ${g.name} (${g.path})`,
     }));
+  }, [keycloakGroups]);
 
-    return [
-      {
-        label: `Roles de Keycloak (${roleOptions.length})`,
-        options: roleOptions,
-      },
-      {
-        label: `Grupos Organizacionales (${groupOptions.length})`,
-        options: groupOptions,
-      },
-    ];
-  }, [keycloakRoles, keycloakGroups]);
+  // Opciones separadas: Roles de Keycloak
+  const roleOptions = useMemo(() => {
+    return (keycloakRoles ?? []).map((r) => {
+      const health = roleHealthMap.get(r.name);
+      const count = health?.userCount;
+      const countLabel = count !== undefined ? ` (${count} usuarios)` : "";
+      return {
+        value: r.name,
+        label: `🛡️ ${r.name}${r.description ? ` - ${r.description}` : ""}${countLabel}`,
+      };
+    });
+  }, [keycloakRoles, roleHealthMap]);
 
   // Opciones de usuarios de Keycloak
   const userOptions = useMemo(() => {
     const list: Array<{ value: string; label: string; disabled?: boolean }> = [];
     const seen = new Set<string>();
 
+    // 1. Usuarios cargados desde Keycloak
     for (const u of keycloakUsers?.data ?? []) {
       if (!seen.has(u.username)) {
         seen.add(u.username);
@@ -345,21 +366,68 @@ export function BpmnTaskAssignmentsTab({
         list.push({
           value: u.username,
           label: displayLabel,
-          disabled: !u.enabled,
         });
       }
     }
 
-    return list;
-  }, [keycloakUsers]);
+    // 2. Asegurar que los usuarios actualmente asignados siempre aparezcan en las opciones
+    for (const u of modalUsers) {
+      if (u === "${initiator}" || u === "solicitante" || u.startsWith("${")) continue;
+      if (!seen.has(u)) {
+        seen.add(u);
+        const known = userMap.get(u);
+        list.unshift({
+          value: u,
+          label: known
+            ? `${known.fullName} (@${known.username}${known.email ? ` - ${known.email}` : ""})`
+            : `@${u}`,
+        });
+      }
+    }
+
+    // Ordenar alfabéticamente
+    return list.sort((a, b) => a.label.localeCompare(b.label));
+  }, [keycloakUsers, modalUsers, userMap]);
 
   // Abrir modal de configuración de responsables
   const handleOpenConfigModal = (record: BpmnUserTaskAssignmentView) => {
     setEditingTask(record);
-    setModalGroups([...record.candidateGroups]);
-    setModalUsers(
-      record.candidateUsers.map((u) => userMap.get(u)?.username || u),
+
+    const orgGroups: string[] = [];
+    const kcRoles: string[] = [];
+
+    for (const g of record.candidateGroups) {
+      if (knownRolesSet.has(g)) {
+        kcRoles.push(g);
+      } else {
+        orgGroups.push(g);
+      }
+    }
+
+    setModalOrgGroups(orgGroups);
+    setModalKeycloakRoles(kcRoles);
+
+    const isInitiator =
+      record.candidateUsers.includes("${initiator}") ||
+      record.candidateUsers.includes("solicitante") ||
+      record.defaultAssignee === "${initiator}";
+
+    setModalAssignToInitiator(isInitiator);
+
+    const normalUsers = record.candidateUsers.filter(
+      (u) => u !== "${initiator}" && u !== "solicitante" && !u.startsWith("${"),
     );
+    setModalUsers(normalUsers.map((u) => userMap.get(u)?.username || u));
+
+    if (isInitiator) {
+      setActiveModalTab("initiator");
+    } else if (orgGroups.length > 0) {
+      setActiveModalTab("groups");
+    } else if (kcRoles.length > 0) {
+      setActiveModalTab("roles");
+    } else {
+      setActiveModalTab("groups");
+    }
   };
 
   // Guardar desde el modal de responsables
@@ -371,17 +439,25 @@ export function BpmnTaskAssignmentsTab({
         (u) => userMap.get(u)?.username || u,
       );
 
+      if (modalAssignToInitiator && !normalizedUsers.includes("${initiator}")) {
+        normalizedUsers.unshift("${initiator}");
+      }
+
+      const combinedGroups = Array.from(
+        new Set([...modalOrgGroups, ...modalKeycloakRoles]),
+      );
+
       await upsertMutation.mutateAsync({
         processDefinitionKey: activeProcessKey,
         taskDefinitionKey: editingTask.taskDefinitionKey,
         taskName: editingTask.taskName,
-        candidateGroups: modalGroups,
+        candidateGroups: combinedGroups,
         candidateUsers: normalizedUsers,
         active: true,
       });
 
       message.success(
-        `Asignación actualizada para "${editingTask.taskName}"`,
+        `Responsables actualizados para "${editingTask.taskName || editingTask.taskDefinitionKey}"`,
       );
       setEditingTask(null);
     } catch (err: unknown) {
@@ -521,13 +597,15 @@ export function BpmnTaskAssignmentsTab({
     {
       title: (
         <Space size={4}>
-          <TeamOutlined style={{ color: "#10b981", fontSize: 13 }} />
-          <span>Grupos y Roles Candidatos</span>
+          <TeamOutlined style={{ color: "#7c3aed", fontSize: 13 }} />
+          <span>Grupos Organizacionales</span>
         </Space>
       ),
-      key: "candidateGroups",
+      key: "candidateOrgGroups",
+      width: 210,
       render: (_, record) => {
-        if (!record.candidateGroups || record.candidateGroups.length === 0) {
+        const groupsOnly = record.candidateGroups.filter((g) => !knownRolesSet.has(g));
+        if (groupsOnly.length === 0) {
           return (
             <Text type="secondary" style={{ fontStyle: "italic", fontSize: 11 }}>
               —
@@ -537,55 +615,73 @@ export function BpmnTaskAssignmentsTab({
 
         return (
           <Space wrap size={[3, 3]}>
-            {record.candidateGroups.map((g) => {
-              const health = roleHealthMap.get(g);
-              const exists = health?.existsInKeycloak ?? true;
+            {groupsOnly.map((g) => (
+              <Tag
+                key={g}
+                color="purple"
+                icon={<TeamOutlined />}
+                style={{ fontSize: 11, margin: 0, padding: "0 5px" }}
+              >
+                {g}
+              </Tag>
+            ))}
+          </Space>
+        );
+      },
+    },
+    {
+      title: (
+        <Space size={4}>
+          <SafetyCertificateOutlined style={{ color: "#2563eb", fontSize: 13 }} />
+          <span>Roles de Keycloak</span>
+        </Space>
+      ),
+      key: "candidateRoles",
+      width: 190,
+      render: (_, record) => {
+        const rolesOnly = record.candidateGroups.filter((g) => knownRolesSet.has(g));
+        if (rolesOnly.length === 0) {
+          return (
+            <Text type="secondary" style={{ fontStyle: "italic", fontSize: 11 }}>
+              —
+            </Text>
+          );
+        }
+
+        return (
+          <Space wrap size={[3, 3]}>
+            {rolesOnly.map((r) => {
+              const health = roleHealthMap.get(r);
               const isEmptyRole =
                 Boolean(health?.isRole) &&
                 health?.userCount === 0 &&
                 !health?.isLoading;
 
-              if (!exists) {
-                return (
-                  <Tooltip key={g} title={`El rol/grupo "${g}" no existe en Keycloak.`}>
-                    <Tag
-                      color="error"
-                      icon={<CloseCircleOutlined />}
-                      style={{ fontSize: 11, margin: 0, padding: "0 5px" }}
-                    >
-                      {g} (No existe)
-                    </Tag>
-                  </Tooltip>
-                );
-              }
-
               if (isEmptyRole) {
                 return (
                   <Tooltip
-                    key={g}
-                    title={`El rol "${g}" no tiene ningún usuario asignado en Keycloak.`}
+                    key={r}
+                    title={`El rol "${r}" no tiene usuarios asignados en Keycloak.`}
                   >
                     <Tag
                       color="warning"
                       icon={<WarningOutlined />}
                       style={{ fontSize: 11, margin: 0, padding: "0 5px" }}
                     >
-                      {g} (0 usuarios)
+                      {r} (0 usuarios)
                     </Tag>
                   </Tooltip>
                 );
               }
 
-              const isRole = health?.isRole ?? keycloakRoles?.some((r) => r.name === g);
-
               return (
                 <Tag
-                  key={g}
-                  color={isRole ? "blue" : "purple"}
-                  icon={isRole ? <SafetyCertificateOutlined /> : <TeamOutlined />}
+                  key={r}
+                  color="blue"
+                  icon={<SafetyCertificateOutlined />}
                   style={{ fontSize: 11, margin: 0, padding: "0 5px" }}
                 >
-                  {g}
+                  {r}
                 </Tag>
               );
             })}
@@ -596,13 +692,27 @@ export function BpmnTaskAssignmentsTab({
     {
       title: (
         <Space size={4}>
-          <UserOutlined style={{ color: "#3b82f6", fontSize: 13 }} />
-          <span>Usuarios Candidatos</span>
+          <UserOutlined style={{ color: "#0284c7", fontSize: 13 }} />
+          <span>Usuarios / Solicitante</span>
         </Space>
       ),
       key: "candidateUsers",
+      width: 220,
       render: (_, record) => {
-        if (!record.candidateUsers || record.candidateUsers.length === 0) {
+        const hasInitiator =
+          record.candidateUsers.includes("${initiator}") ||
+          record.candidateUsers.includes("solicitante") ||
+          record.defaultAssignee === "${initiator}";
+
+        const hasDynamicAssigned =
+          record.defaultAssignee === "${encargadoContratacionUserId}" ||
+          record.candidateUsers.includes("${encargadoContratacionUserId}");
+
+        const normalUsers = record.candidateUsers.filter(
+          (u) => u !== "${initiator}" && u !== "solicitante" && !u.startsWith("${"),
+        );
+
+        if (!hasInitiator && !hasDynamicAssigned && normalUsers.length === 0) {
           return (
             <Text type="secondary" style={{ fontStyle: "italic", fontSize: 11 }}>
               —
@@ -612,7 +722,31 @@ export function BpmnTaskAssignmentsTab({
 
         return (
           <Space wrap size={[3, 3]}>
-            {record.candidateUsers.map((u) => {
+            {hasInitiator && (
+              <Tooltip title="Esta tarea vuelve y se asigna automáticamente al funcionario que originó la solicitud.">
+                <Tag
+                  color="success"
+                  icon={<UserOutlined />}
+                  style={{ fontSize: 11, margin: 0, padding: "0 6px", fontWeight: 600 }}
+                >
+                  Solicitante / Iniciador
+                </Tag>
+              </Tooltip>
+            )}
+
+            {hasDynamicAssigned && (
+              <Tooltip title="Se asigna al profesional designado por la Jefatura de Adquisiciones.">
+                <Tag
+                  color="cyan"
+                  icon={<ApartmentOutlined />}
+                  style={{ fontSize: 11, margin: 0, padding: "0 6px" }}
+                >
+                  Encargado Designado
+                </Tag>
+              </Tooltip>
+            )}
+
+            {normalUsers.map((u) => {
               const user = userMap.get(u);
               const displayName = user?.fullName || user?.username || u;
 
@@ -737,11 +871,12 @@ export function BpmnTaskAssignmentsTab({
                   <Select
                     size="small"
                     loading={loadingDefs}
-                    placeholder="Seleccionar proceso..."
-                    value={activeProcessKey}
+                    placeholder="Seleccione un proceso BPMN..."
+                    value={activeProcessKey || undefined}
                     onChange={(val) => setSelectedProcessKey(val)}
-                    style={{ width: 280 }}
+                    style={{ width: 320 }}
                     showSearch
+                    allowClear
                     optionFilterProp="label"
                     options={uniqueProcesses.map((p) => ({
                       value: p.key,
@@ -797,6 +932,7 @@ export function BpmnTaskAssignmentsTab({
               )}
               <Button
                 size="small"
+                disabled={!activeProcessKey}
                 icon={<ReloadOutlined spin={loadingTasks} />}
                 onClick={() => refetchTasks()}
               >
@@ -805,46 +941,48 @@ export function BpmnTaskAssignmentsTab({
             </Space>
           </div>
 
-          {/* Fila 2: Buscador y Filtros de Estado */}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: 8,
-              borderTop: "1px solid #f1f5f9",
-              paddingTop: 6,
-            }}
-          >
-            <Input
-              size="small"
-              placeholder="Buscar etapa o clave..."
-              value={taskFilter}
-              onChange={(e) => setTaskFilter(e.target.value)}
-              style={{ width: 220 }}
-              allowClear
-              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-            />
-
-            <Radio.Group
-              size="small"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              buttonStyle="solid"
+          {/* Fila 2: Buscador y Filtros de Estado (sólo visible si hay un proceso seleccionado) */}
+          {activeProcessKey && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 8,
+                borderTop: "1px solid #f1f5f9",
+                paddingTop: 6,
+              }}
             >
-              <Radio.Button value="all">Todas ({stats.total})</Radio.Button>
-              <Radio.Button value="configured">Listas ({stats.configured})</Radio.Button>
-              <Radio.Button value="unassigned">Pendientes ({stats.unassigned})</Radio.Button>
-              {stats.withWarnings > 0 && (
-                <Radio.Button value="warnings">Alertas ({stats.withWarnings})</Radio.Button>
-              )}
-            </Radio.Group>
-          </div>
+              <Input
+                size="small"
+                placeholder="Buscar etapa o clave..."
+                value={taskFilter}
+                onChange={(e) => setTaskFilter(e.target.value)}
+                style={{ width: 220 }}
+                allowClear
+                prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+              />
+
+              <Radio.Group
+                size="small"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                buttonStyle="solid"
+              >
+                <Radio.Button value="all">Todas ({stats.total})</Radio.Button>
+                <Radio.Button value="configured">Listas ({stats.configured})</Radio.Button>
+                <Radio.Button value="unassigned">Pendientes ({stats.unassigned})</Radio.Button>
+                {stats.withWarnings > 0 && (
+                  <Radio.Button value="warnings">Alertas ({stats.withWarnings})</Radio.Button>
+                )}
+              </Radio.Group>
+            </div>
+          )}
         </div>
       </Card>
 
-      {/* Tabla Compacta de Etapas BPMN */}
+      {/* Tabla Compacta de Etapas BPMN o Empty State descriptivo */}
       {activeProcessKey ? (
         <Table<BpmnUserTaskAssignmentView>
           rowKey="taskDefinitionKey"
@@ -873,7 +1011,29 @@ export function BpmnTaskAssignmentsTab({
           }}
         />
       ) : (
-        <Empty description="Selecciona un proceso BPMN desplegado para configurar sus responsables." />
+        <Card
+          style={{
+            borderRadius: 8,
+            border: "1px dashed #cbd5e1",
+            background: "#ffffff",
+            textAlign: "center",
+            padding: "48px 24px",
+          }}
+        >
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+                <Text strong style={{ fontSize: 15, color: "#1e293b" }}>
+                  Ningún proceso BPMN seleccionado
+                </Text>
+                <Text type="secondary" style={{ fontSize: 13, maxWidth: 520 }}>
+                  Por favor, elija un proceso de negocio en el selector superior para visualizar y configurar sus etapas, responsables asignados en Keycloak y formularios dinámicos.
+                </Text>
+              </div>
+            }
+          />
+        </Card>
       )}
 
       {/* Modal para Ver Diagrama BPMN */}
@@ -904,10 +1064,17 @@ export function BpmnTaskAssignmentsTab({
             key="clear"
             danger
             onClick={() => {
-              setModalGroups([]);
+              setModalOrgGroups([]);
+              setModalKeycloakRoles([]);
               setModalUsers([]);
+              setModalAssignToInitiator(false);
             }}
-            disabled={modalGroups.length === 0 && modalUsers.length === 0}
+            disabled={
+              !modalAssignToInitiator &&
+              modalOrgGroups.length === 0 &&
+              modalKeycloakRoles.length === 0 &&
+              modalUsers.length === 0
+            }
           >
             Limpiar asignaciones
           </Button>,
@@ -927,10 +1094,11 @@ export function BpmnTaskAssignmentsTab({
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 16,
+              gap: 14,
               paddingTop: 4,
             }}
           >
+            {/* Cabecera de la etapa */}
             <div
               style={{
                 backgroundColor: "#f8fafc",
@@ -953,7 +1121,7 @@ export function BpmnTaskAssignmentsTab({
                     letterSpacing: 0.5,
                   }}
                 >
-                  Etapa / Tarea de Usuario
+                  Etapa / Tarea BPMN
                 </Text>
                 <div style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>
                   {editingTask.taskName || editingTask.taskDefinitionKey}
@@ -967,85 +1135,277 @@ export function BpmnTaskAssignmentsTab({
               </Tag>
             </div>
 
-            {/* Grupos y Roles */}
-            <div>
-              <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                <Space>
-                  <TeamOutlined style={{ color: "#10b981", fontSize: 14 }} />
-                  <Text strong style={{ fontSize: 13 }}>
-                    Grupos y Roles Candidatos (Keycloak)
-                  </Text>
-                </Space>
-                <Paragraph type="secondary" style={{ fontSize: 11, margin: 0 }}>
-                  Cualquier usuario con estos roles o grupos podrá ver y reclamar esta tarea.
-                </Paragraph>
-                <div style={{ marginTop: 6 }}>
-                  <Select
-                    mode="tags"
-                    style={{ width: "100%" }}
-                    placeholder="Seleccionar roles de Keycloak o grupos organizacionales..."
-                    value={modalGroups}
-                    onChange={setModalGroups}
-                    options={groupedGroupAndRoleOptions}
-                    allowClear
-                  />
-                </div>
-              </Space>
-
-              {modalGroups.map((g) => {
-                const health = roleHealthMap.get(g);
-                if (health && !health.isLoading && health.isRole && health.userCount === 0) {
-                  return (
-                    <Alert
-                      key={g}
-                      type="warning"
-                      showIcon
-                      style={{ marginTop: 6, padding: "4px 10px", fontSize: 12 }}
-                      message={`El rol "${g}" no tiene usuarios asignados en Keycloak.`}
+            {/* Asignación Especial Dinámica: Solicitante / Iniciador */}
+            <Card
+              size="small"
+              style={{
+                borderRadius: 8,
+                border: modalAssignToInitiator ? "1px solid #86efac" : "1px solid #e2e8f0",
+                background: modalAssignToInitiator ? "#f0fdf4" : "#ffffff",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <div>
+                  <Space align="center" size="small">
+                    <UserOutlined
+                      style={{
+                        color: modalAssignToInitiator ? "#16a34a" : "#64748b",
+                        fontSize: 16,
+                      }}
                     />
-                  );
-                }
-                return null;
-              })}
-            </div>
-
-            {/* Usuarios Candidatos Directos */}
-            <div>
-              <Space direction="vertical" size={2} style={{ width: "100%" }}>
-                <Space>
-                  <UserOutlined style={{ color: "#3b82f6", fontSize: 14 }} />
-                  <Text strong style={{ fontSize: 13 }}>
-                    Usuarios Candidatos Específicos (Keycloak)
-                  </Text>
-                </Space>
-                <Paragraph type="secondary" style={{ fontSize: 11, margin: 0 }}>
-                  Opcional. Asigna nominalmente a personas específicas de Keycloak.
-                </Paragraph>
-                <div style={{ marginTop: 6 }}>
-                  <Select
-                    mode="multiple"
-                    style={{ width: "100%" }}
-                    placeholder="Buscar usuario de Keycloak..."
-                    value={modalUsers}
-                    onChange={setModalUsers}
-                    options={userOptions}
-                    optionFilterProp="label"
-                    loading={loadingUsers}
-                    allowClear
-                  />
+                    <Text
+                      strong
+                      style={{
+                        fontSize: 13,
+                        color: modalAssignToInitiator ? "#15803d" : "#0f172a",
+                      }}
+                    >
+                      Asignar automáticamente al Solicitante / Iniciador del Trámite
+                    </Text>
+                    {modalAssignToInitiator && (
+                      <Tag color="success" style={{ fontSize: 10, padding: "0 4px" }}>
+                        Activo (${`initiator`})
+                      </Tag>
+                    )}
+                  </Space>
+                  <Paragraph
+                    type="secondary"
+                    style={{ fontSize: 11, margin: "2px 0 0" }}
+                  >
+                    Recomendado para etapas de <strong>Subsanación / Ajuste de Solicitud</strong>. Cuando el trámite sea observado o devuelto, regresará directamente a la bandeja de quien originó la solicitud.
+                  </Paragraph>
                 </div>
-              </Space>
-            </div>
+                <Switch
+                  checked={modalAssignToInitiator}
+                  onChange={(checked) => setModalAssignToInitiator(checked)}
+                  checkedChildren="Sí"
+                  unCheckedChildren="No"
+                />
+              </div>
+            </Card>
 
-            {modalGroups.length === 0 && modalUsers.length === 0 && (
-              <Alert
-                type="warning"
-                showIcon
-                style={{ padding: "6px 12px", fontSize: 12 }}
-                message="Tarea sin responsables definidos"
-                description="Solo podrá ser atendida por administradores (workflow-admin)."
-              />
-            )}
+            {/* Pestañas para configurar por Grupos, Roles o Usuarios */}
+            <Tabs
+              activeKey={activeModalTab}
+              onChange={setActiveModalTab}
+              type="card"
+              size="small"
+              items={[
+                {
+                  key: "groups",
+                  label: (
+                    <Space size={4}>
+                      <TeamOutlined style={{ color: "#7c3aed" }} />
+                      <span>Grupos Keycloak</span>
+                      {modalOrgGroups.length > 0 && (
+                        <Tag
+                          color="purple"
+                          style={{ fontSize: 10, margin: 0, padding: "0 4px" }}
+                        >
+                          {modalOrgGroups.length}
+                        </Tag>
+                      )}
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ paddingTop: 4 }}>
+                      <Paragraph
+                        type="secondary"
+                        style={{ fontSize: 12, marginBottom: 8 }}
+                      >
+                        Asigna la tarea a departamentos o unidades completas (ej:{" "}
+                        <code>encargado-almacenes</code>,{" "}
+                        <code>encargado-presupuestos</code>,{" "}
+                        <code>gerencia-administrativa-financiera</code>). Cualquier miembro
+                        del grupo podrá ver y reclamar la tarea.
+                      </Paragraph>
+                      <Select
+                        mode="tags"
+                        style={{ width: "100%" }}
+                        placeholder="Seleccionar grupos organizacionales de Keycloak..."
+                        value={modalOrgGroups}
+                        onChange={setModalOrgGroups}
+                        options={groupOptions}
+                        allowClear
+                      />
+                    </div>
+                  ),
+                },
+                {
+                  key: "roles",
+                  label: (
+                    <Space size={4}>
+                      <SafetyCertificateOutlined style={{ color: "#2563eb" }} />
+                      <span>Roles Keycloak</span>
+                      {modalKeycloakRoles.length > 0 && (
+                        <Tag
+                          color="blue"
+                          style={{ fontSize: 10, margin: 0, padding: "0 4px" }}
+                        >
+                          {modalKeycloakRoles.length}
+                        </Tag>
+                      )}
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ paddingTop: 4 }}>
+                      <Paragraph
+                        type="secondary"
+                        style={{ fontSize: 12, marginBottom: 8 }}
+                      >
+                        Asigna la tarea por rol jerárquico o de seguridad (ej:{" "}
+                        <code>gerente-general</code>, <code>gerente-area</code>,{" "}
+                        <code>workflow-admin</code>).
+                      </Paragraph>
+                      <Select
+                        mode="tags"
+                        style={{ width: "100%" }}
+                        placeholder="Seleccionar roles de Keycloak..."
+                        value={modalKeycloakRoles}
+                        onChange={setModalKeycloakRoles}
+                        options={roleOptions}
+                        allowClear
+                      />
+                    </div>
+                  ),
+                },
+                {
+                  key: "users",
+                  label: (
+                    <Space size={4}>
+                      <UserOutlined style={{ color: "#0284c7" }} />
+                      <span>Usuarios Específicos</span>
+                      {modalUsers.length > 0 && (
+                        <Tag
+                          color="cyan"
+                          style={{ fontSize: 10, margin: 0, padding: "0 4px" }}
+                        >
+                          {modalUsers.length}
+                        </Tag>
+                      )}
+                    </Space>
+                  ),
+                  children: (
+                    <div style={{ paddingTop: 4 }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          marginBottom: 6,
+                        }}
+                      >
+                        <Paragraph
+                          type="secondary"
+                          style={{ fontSize: 12, margin: 0 }}
+                        >
+                          Asignación nominal directa a funcionarios específicos.
+                        </Paragraph>
+                        <Button
+                          size="small"
+                          type="link"
+                          icon={<ReloadOutlined spin={loadingUsers} />}
+                          onClick={() => refetchUsers()}
+                          style={{ fontSize: 11, padding: 0 }}
+                        >
+                          Actualizar ({userOptions.length} disponibles)
+                        </Button>
+                      </div>
+                      <Select
+                        mode="multiple"
+                        style={{ width: "100%" }}
+                        placeholder="Buscar por nombre, usuario (@) o correo electrónico..."
+                        value={modalUsers}
+                        onChange={setModalUsers}
+                        options={userOptions}
+                        showSearch
+                        filterOption={(input, option) => {
+                          const label = String(option?.label ?? "").toLowerCase();
+                          const val = String(option?.value ?? "").toLowerCase();
+                          const search = input.toLowerCase();
+                          return label.includes(search) || val.includes(search);
+                        }}
+                        loading={loadingUsers}
+                        allowClear
+                        maxTagCount="responsive"
+                      />
+                    </div>
+                  ),
+                },
+              ]}
+            />
+
+            {/* Resumen de Responsables Configurados */}
+            <div
+              style={{
+                backgroundColor: "#f8fafc",
+                padding: "8px 12px",
+                borderRadius: 6,
+                border: "1px solid #e2e8f0",
+                fontSize: 12,
+              }}
+            >
+              <Text
+                strong
+                style={{
+                  fontSize: 11,
+                  color: "#64748b",
+                  textTransform: "uppercase",
+                }}
+              >
+                Resumen de Responsables:
+              </Text>
+              <div
+                style={{
+                  marginTop: 4,
+                  display: "flex",
+                  gap: 6,
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                }}
+              >
+                {modalAssignToInitiator && (
+                  <Tag
+                    color="success"
+                    icon={<UserOutlined />}
+                    style={{ fontWeight: 600 }}
+                  >
+                    Solicitante / Iniciador (${`initiator`})
+                  </Tag>
+                )}
+                {modalOrgGroups.map((g) => (
+                  <Tag key={g} color="purple" icon={<TeamOutlined />}>
+                    {g}
+                  </Tag>
+                ))}
+                {modalKeycloakRoles.map((r) => (
+                  <Tag key={r} color="blue" icon={<SafetyCertificateOutlined />}>
+                    {r}
+                  </Tag>
+                ))}
+                {modalUsers.map((u) => (
+                  <Tag key={u} color="cyan" icon={<UserOutlined />}>
+                    @{u}
+                  </Tag>
+                ))}
+                {!modalAssignToInitiator &&
+                  modalOrgGroups.length === 0 &&
+                  modalKeycloakRoles.length === 0 &&
+                  modalUsers.length === 0 && (
+                    <Text type="secondary" italic style={{ fontSize: 11 }}>
+                      Sin responsables específicos (solo administradores de sistema
+                      podrán atenderla)
+                    </Text>
+                  )}
+              </div>
+            </div>
           </div>
         )}
       </Modal>

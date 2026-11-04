@@ -52,10 +52,10 @@ export function ApprovalDecisionModal({
   const isApprove = action === "APPROVE";
   const isReject = action === "REJECT";
 
-  // Solo consultamos el formulario dinámico si es una aprobación
+  // Consultamos el formulario dinámico para sincronizar las banderas del gateway en cualquier decisión
   const { data: formDto, isLoading: isLoadingForm } = useTaskFormQuery(
     task?.id,
-    Boolean(open && task?.id && isApprove),
+    Boolean(open && task?.id),
   );
 
   const handleModalClose = () => {
@@ -159,13 +159,48 @@ export function ApprovalDecisionModal({
 
     const commentText =
       typeof values.comentarios === "string" ? values.comentarios.trim() : "";
+    const resolvedComment =
+      commentText || (isApprove ? "Aprobado conforme" : "Sin comentarios");
+
+    const taskKey = task.taskDefinitionKey || "";
+    if (taskKey === "taskVerificarExistencias") {
+      dynamicFlags.aprobadoAlmacenes = isApprove;
+      if (!values.obsAlmacenes) dynamicFlags.obsAlmacenes = resolvedComment;
+    } else if (taskKey === "taskVerificarPresupuesto") {
+      dynamicFlags.aprobadoPresupuesto = isApprove;
+      if (!values.obsPresupuesto) dynamicFlags.obsPresupuesto = resolvedComment;
+    } else if (taskKey === "taskAprobacionSuperior") {
+      dynamicFlags.aprobadoSuperior = isApprove;
+      if (!values.obsSuperior) dynamicFlags.obsSuperior = resolvedComment;
+    } else if (taskKey === "taskGafCat1" || taskKey === "taskGafCat2") {
+      dynamicFlags.aprobadoGaf = isApprove;
+      if (!values.obsGaf) dynamicFlags.obsGaf = resolvedComment;
+    } else if (taskKey === "taskVoboFinanciero") {
+      dynamicFlags.voboFinanciero = isApprove;
+      dynamicFlags.aprobadoFinanciero = isApprove;
+      if (!values.obsFinanciero) dynamicFlags.obsFinanciero = resolvedComment;
+    } else if (taskKey === "taskVoboLegal") {
+      dynamicFlags.voboLegal = isApprove;
+      dynamicFlags.aprobadoLegal = isApprove;
+      if (!values.obsLegal) dynamicFlags.obsLegal = resolvedComment;
+    } else if (
+      taskKey === "taskDecisionFinalCat1" ||
+      taskKey === "taskDecisionFinalCat2"
+    ) {
+      dynamicFlags.decisionFinal = isApprove
+        ? "APROBADO"
+        : isReject
+          ? "RECHAZADO"
+          : "OBSERVADO";
+      if (!values.justificacion) dynamicFlags.justificacion = resolvedComment;
+    }
 
     const decisionPayload: Record<string, unknown> = {
       ...(isApprove ? values : {}),
       aprobado: isApprove,
       decision: action,
       estadoDecision: isApprove ? "APROBADO" : isReject ? "RECHAZADO" : "OBSERVADO",
-      comentarios: commentText || (isApprove ? "Aprobado conforme" : "Sin comentarios"),
+      comentarios: resolvedComment,
       aprobadoPor: approverName,
       fechaDecision: new Date().toISOString(),
       ...dynamicFlags,

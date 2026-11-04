@@ -82,6 +82,7 @@ export interface BpmnUserTaskAssignmentView {
   candidateGroups: string[];
   candidateUsers: string[];
   active: boolean;
+  defaultAssignee?: string | null;
 }
 
 export interface UpsertTaskAssignmentPayload {

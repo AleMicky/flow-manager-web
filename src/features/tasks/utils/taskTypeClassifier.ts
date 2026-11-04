@@ -21,6 +21,7 @@ export function isApprovalTask(
     "evaluacion",
     "dictamen",
     "conformidad",
+    "taskgaf",
   ];
 
   if (approvalKeys.some((k) => key.includes(k))) {

@@ -59,10 +59,17 @@ export function ApprovalsPage() {
   const { user } = useAuthStore();
   const isAdmin = Boolean(
     user?.roles?.some((r) =>
-      ["workflow-admin", "admin", "realm-admin", "superadmin"].includes(
-        r.toLowerCase(),
+      [
+        "workflow-admin",
+        "admin",
+        "realm-admin",
+        "superadmin",
+        "administrador",
+      ].includes(r.toLowerCase()),
+    ) ||
+      ["admin", "administrador"].includes(
+        (user?.username || "").toLowerCase(),
       ),
-    ),
   );
 
   const [activeTab, setActiveTab] = useState<"mine" | "available">("mine");
@@ -267,14 +274,42 @@ export function ApprovalsPage() {
         ),
       },
       {
-        title: "Estado de Decisión",
+        title: "Estado / Asignación",
         key: "decisionStatus",
-        width: 170,
-        render: () => (
-          <Tag color="gold" icon={<ExclamationCircleOutlined />} style={{ fontSize: 12 }}>
-            Esperando tu visto bueno
-          </Tag>
-        ),
+        width: 190,
+        render: (_, record) => {
+          const isAssignedToMe =
+            record.assignee === user?.username || record.assignee === user?.id;
+          if (record.assignee && !isAssignedToMe) {
+            return (
+              <Space direction="vertical" size={2}>
+                <Tag
+                  color="geekblue"
+                  icon={<UserOutlined />}
+                  style={{ fontSize: 12 }}
+                >
+                  Asignado: @{record.assignee}
+                </Tag>
+                <Tag
+                  color="gold"
+                  icon={<ExclamationCircleOutlined />}
+                  style={{ fontSize: 11 }}
+                >
+                  Pendiente de VoBo
+                </Tag>
+              </Space>
+            );
+          }
+          return (
+            <Tag
+              color="gold"
+              icon={<ExclamationCircleOutlined />}
+              style={{ fontSize: 12 }}
+            >
+              Esperando tu visto bueno
+            </Tag>
+          );
+        },
       },
       {
         title: "Acciones Ejecutivas",
@@ -329,7 +364,7 @@ export function ApprovalsPage() {
         ),
       },
     ],
-    [definitionsData, availableProcesses],
+    [definitionsData, availableProcesses, user?.username, user?.id],
   );
 
   // Columnas para tareas disponibles en comités o grupos
@@ -399,7 +434,7 @@ export function ApprovalsPage() {
       {
         title: "Acciones",
         key: "actions",
-        width: isAdmin ? 360 : 260,
+        width: isAdmin ? 410 : 280,
         fixed: "right",
         render: (_, record) => (
           <Space size="small">
@@ -433,6 +468,16 @@ export function ApprovalsPage() {
                     onClick={() => handleDirectDecision(record, "REJECT")}
                   >
                     Rechazar
+                  </Button>
+                </Tooltip>
+
+                <Tooltip title="Devolver con observaciones">
+                  <Button
+                    size="small"
+                    style={{ color: "#d97706", borderColor: "#d97706" }}
+                    onClick={() => handleDirectDecision(record, "OBSERVE")}
+                  >
+                    Observar
                   </Button>
                 </Tooltip>
               </>

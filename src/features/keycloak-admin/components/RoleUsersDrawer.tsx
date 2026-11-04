@@ -55,12 +55,12 @@ export function RoleUsersDrawer({
   const { data: roleUsers, isLoading: loadingRoleUsers } =
     useKeycloakUsersByRoleQuery(
       roleName ?? undefined,
-      { first: 0, max: 100 },
+      { first: 0, max: 1000 },
       isEnabled,
     );
 
   const { data: allUsersData, isLoading: loadingAllUsers } =
-    useKeycloakUsersQuery(isEnabled ? { first: 0, max: 100 } : undefined);
+    useKeycloakUsersQuery(isEnabled ? { first: 0, max: 1000 } : undefined);
 
   const assignRoleMutation = useAssignUserRoleMutation();
   const removeRoleMutation = useRemoveUserRoleMutation();
