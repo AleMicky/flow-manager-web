@@ -6,3 +6,4 @@ export * from "./pages/DefinitionsPage";
 export * from "./components/BpmnXmlModal";
 export * from "./components/DeployBpmnModal";
 export * from "./components/ProcessVersionsDrawer";
+export * from "./components/ProcessAssignmentsDrawer";

@@ -2,21 +2,30 @@ import {
   ApartmentOutlined,
   CheckCircleOutlined,
   CloudUploadOutlined,
+  CopyOutlined,
   EyeOutlined,
+  FileSearchOutlined,
   HistoryOutlined,
+  MoreOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
   SearchOutlined,
   StopOutlined,
+  TeamOutlined,
 } from "@ant-design/icons";
 import {
-  Badge,
+  Alert,
   Button,
   Card,
+  Col,
+  Dropdown,
+  Empty,
   Input,
   Popconfirm,
+  Row,
   Select,
   Space,
+  Statistic,
   Switch,
   Table,
   Tag,
@@ -25,10 +34,13 @@ import {
   message,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
+import type { MenuProps } from "antd";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { BpmnXmlModal } from "../components/BpmnXmlModal";
 import { DeployBpmnModal } from "../components/DeployBpmnModal";
 import { ProcessVersionsDrawer } from "../components/ProcessVersionsDrawer";
+import { ProcessAssignmentsDrawer } from "../components/ProcessAssignmentsDrawer";
 import {
   useDefinitionsQuery,
   useUpdateDefinitionStatusMutation,
@@ -36,10 +48,12 @@ import {
 import type { ProcessDefinition, QueryDefinitionsParams } from "../types/definitions.types";
 import { useAuthStore } from "../../../stores/auth.store";
 import { StartProcessModal } from "../../instances/components/StartProcessModal";
+import { getErrorMessage } from "../../common";
 
 const { Title, Paragraph, Text } = Typography;
 
 export function DefinitionsPage() {
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [searchTerm, setSearchTerm] = useState("");
@@ -58,6 +72,14 @@ export function DefinitionsPage() {
     definitionId: null,
   });
   const [versionsDrawer, setVersionsDrawer] = useState<{
+    open: boolean;
+    processKey: string | null;
+    processName?: string;
+  }>({
+    open: false,
+    processKey: null,
+  });
+  const [assignmentsDrawer, setAssignmentsDrawer] = useState<{
     open: boolean;
     processKey: string | null;
     processName?: string;
@@ -85,7 +107,7 @@ export function DefinitionsPage() {
     ...(statusFilter === "suspended" ? { suspended: true } : {}),
   };
 
-  const { data, isLoading, refetch, isFetching } =
+  const { data, isLoading, isError, error, refetch, isFetching } =
     useDefinitionsQuery(queryParams);
 
   const updateStatusMutation = useUpdateDefinitionStatusMutation();
@@ -114,6 +136,7 @@ export function DefinitionsPage() {
   const handleToggleStatus = async (record: ProcessDefinition) => {
     const nextAction = record.suspended ? "activate" : "suspend";
     const label = record.suspended ? "activar" : "inactivar";
+    const processTitle = record.name || record.key;
 
     try {
       setTogglingId(record.id);
@@ -122,14 +145,13 @@ export function DefinitionsPage() {
         payload: { action: nextAction, includeProcessInstances: false },
       });
       message.success(
-        `Proceso "${record.name || record.key}" ${
+        `Proceso "${processTitle}" ${
           record.suspended ? "activado" : "inactivado"
         } exitosamente`,
       );
     } catch (err: unknown) {
-      const axErr = err as { response?: { data?: { message?: string } } };
       message.error(
-        axErr.response?.data?.message || `Error al ${label} el proceso BPMN`,
+        getErrorMessage(err, `Error al ${label} el proceso "${processTitle}"`),
       );
     } finally {
       setTogglingId(null);
@@ -143,44 +165,138 @@ export function DefinitionsPage() {
     ),
   );
 
+  const getDropdownItems = (record: ProcessDefinition): MenuProps["items"] => [
+    {
+      key: "xml",
+      icon: <EyeOutlined />,
+      label: "Ver XML / BPMN",
+      onClick: () =>
+        setXmlModal({
+          open: true,
+          definitionId: record.id,
+          processName: record.name || record.key,
+        }),
+    },
+    {
+      key: "versions",
+      icon: <HistoryOutlined />,
+      label: "Historial de versiones",
+      onClick: () =>
+        setVersionsDrawer({
+          open: true,
+          processKey: record.key,
+          processName: record.name || record.key,
+        }),
+    },
+    {
+      key: "assignments",
+      icon: <TeamOutlined />,
+      label: "Configurar Responsables (Keycloak)",
+      onClick: () =>
+        setAssignmentsDrawer({
+          open: true,
+          processKey: record.key,
+          processName: record.name || record.key,
+        }),
+    },
+    {
+      type: "divider",
+    },
+    {
+      key: "instances",
+      icon: <FileSearchOutlined />,
+      label: "Ver solicitudes activas",
+      onClick: () => {
+        navigate(`/solicitudes?processKey=${encodeURIComponent(record.key)}`);
+      },
+    },
+    {
+      key: "copyKey",
+      icon: <CopyOutlined />,
+      label: "Copiar clave (Key)",
+      onClick: () => {
+        navigator.clipboard.writeText(record.key);
+        message.success(`Clave "${record.key}" copiada al portapapeles`);
+      },
+    },
+  ];
+
   const columns: ColumnsType<ProcessDefinition> = [
     {
       title: "Proceso",
       dataIndex: "name",
       key: "name",
       render: (name: string, record) => (
-        <div>
-          <Space orientation="horizontal" size="small">
-            <Text strong style={{ fontSize: 14 }}>
-              {name || record.key}
-            </Text>
-            {record.suspended && (
-              <Tag color="error" style={{ fontSize: 11, lineHeight: "16px" }}>
-                Inactivo
-              </Tag>
-            )}
-          </Space>
-          {record.description && (
-            <Paragraph
-              type="secondary"
-              ellipsis={{ rows: 1 }}
-              style={{ margin: 0, fontSize: 12 }}
-            >
-              {record.description}
-            </Paragraph>
-          )}
-          <div style={{ fontSize: 11, color: "#64748b" }}>
-            Recurso: {record.resource}
+        <Space align="start" size="middle">
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              backgroundColor: record.suspended ? "#f1f5f9" : "#eff6ff",
+              border: `1px solid ${record.suspended ? "#cbd5e1" : "#bfdbfe"}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: record.suspended ? "#64748b" : "#2563eb",
+              fontSize: 16,
+              flexShrink: 0,
+            }}
+          >
+            <ApartmentOutlined />
           </div>
-        </div>
+          <div style={{ minWidth: 0 }}>
+            <Space orientation="horizontal" size="small" wrap>
+              <Text strong style={{ fontSize: 14 }}>
+                {name || record.key}
+              </Text>
+              {record.suspended && (
+                <Tag color="warning" bordered={false} style={{ fontSize: 11 }}>
+                  Inactivo
+                </Tag>
+              )}
+            </Space>
+            {record.description && (
+              <Paragraph
+                type="secondary"
+                ellipsis={{ rows: 1 }}
+                style={{ margin: 0, fontSize: 12 }}
+              >
+                {record.description}
+              </Paragraph>
+            )}
+            <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+              Recurso: <Text code style={{ fontSize: 11 }}>{record.resource}</Text>
+            </div>
+          </div>
+        </Space>
       ),
     },
     {
       title: "Clave (Key)",
       dataIndex: "key",
       key: "key",
-      width: 180,
-      render: (key: string) => <Tag color="geekblue">{key}</Tag>,
+      width: 170,
+      render: (key: string) => (
+        <Tooltip title="Clic para copiar clave">
+          <Tag
+            color="geekblue"
+            style={{
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+            onClick={() => {
+              navigator.clipboard.writeText(key);
+              message.success(`Clave "${key}" copiada`);
+            }}
+          >
+            {key}
+            <CopyOutlined style={{ fontSize: 10, opacity: 0.7 }} />
+          </Tag>
+        </Tooltip>
+      ),
     },
     {
       title: "Versión",
@@ -188,54 +304,75 @@ export function DefinitionsPage() {
       key: "version",
       width: 90,
       align: "center",
-      render: (version: number) => <Tag color="purple">v{version}</Tag>,
+      render: (version: number) => (
+        <Tag color="purple" style={{ borderRadius: 10, fontWeight: 500 }}>
+          v{version}
+        </Tag>
+      ),
     },
     {
       title: "Estado",
       dataIndex: "suspended",
       key: "suspended",
-      width: 130,
+      width: 110,
+      align: "center",
       render: (suspended: boolean) =>
         suspended ? (
-          <Badge status="error" text="Inactivo" />
+          <Tag
+            icon={<StopOutlined />}
+            color="warning"
+            style={{ borderRadius: 12, padding: "0 8px" }}
+          >
+            Inactivo
+          </Tag>
         ) : (
-          <Badge status="success" text="Activo" />
+          <Tag
+            icon={<CheckCircleOutlined />}
+            color="success"
+            style={{ borderRadius: 12, padding: "0 8px" }}
+          >
+            Activo
+          </Tag>
         ),
     },
     {
       title: "Deployment ID",
       dataIndex: "deploymentId",
       key: "deploymentId",
-      width: 160,
-      ellipsis: true,
+      width: 140,
       render: (id: string) => (
-        <Text type="secondary" copyable={{ text: id }}>
-          {id}
-        </Text>
+        <Tooltip title={`Deployment ID: ${id}`}>
+          <Text
+            type="secondary"
+            copyable={{ text: id }}
+            style={{ fontSize: 12, fontFamily: "monospace" }}
+          >
+            {id ? (id.length > 12 ? `${id.slice(0, 10)}...` : id) : "-"}
+          </Text>
+        </Tooltip>
       ),
     },
     {
       title: "Acciones",
       key: "actions",
-      width: 290,
+      width: 200,
       fixed: "right",
       render: (_, record) => {
         const isCurrentlyToggling = togglingId === record.id;
 
         return (
-          <Space size="small" wrap>
+          <Space size="small">
             <Tooltip
               title={
                 record.suspended
-                  ? "Proceso suspendido/inactivo. Debe activarlo para iniciar nuevas solicitudes."
+                  ? "Proceso inactivo. Debe activarlo para iniciar nuevas solicitudes."
                   : "Iniciar nueva solicitud de este proceso"
               }
             >
               <Button
-                type="text"
+                type={record.suspended ? "default" : "primary"}
                 size="small"
                 disabled={record.suspended}
-                style={{ color: record.suspended ? undefined : "#10b981" }}
                 icon={<PlayCircleOutlined />}
                 onClick={() =>
                   setStartInstanceModal({
@@ -253,9 +390,11 @@ export function DefinitionsPage() {
               title={
                 !canDeploy
                   ? "Requiere rol workflow-admin o workflow-designer"
+                  : updateStatusMutation.isPending && !isCurrentlyToggling
+                  ? "Hay otra actualización en curso..."
                   : record.suspended
-                  ? "Activar proceso para que aparezca en formularios y permita nuevas instancias"
-                  : "Inactivar proceso para ocultarlo de formularios y bloquear nuevas instancias"
+                  ? "Activar proceso para permitir nuevas solicitudes"
+                  : "Inactivar proceso para suspender nuevas solicitudes"
               }
             >
               <Popconfirm
@@ -274,19 +413,18 @@ export function DefinitionsPage() {
                 okButtonProps={{
                   danger: !record.suspended,
                 }}
-                disabled={!canDeploy}
+                disabled={!canDeploy || updateStatusMutation.isPending}
                 onConfirm={() => handleToggleStatus(record)}
               >
                 <Button
-                  type="text"
                   size="small"
-                  disabled={!canDeploy}
+                  disabled={!canDeploy || (updateStatusMutation.isPending && !isCurrentlyToggling)}
                   loading={isCurrentlyToggling}
                   danger={!record.suspended}
                   style={
                     record.suspended
-                      ? { color: "#16a34a" }
-                      : { color: "#ea580c" }
+                      ? { color: "#16a34a", borderColor: "#86efac" }
+                      : undefined
                   }
                   icon={
                     record.suspended ? (
@@ -301,44 +439,30 @@ export function DefinitionsPage() {
               </Popconfirm>
             </Tooltip>
 
-            <Tooltip title="Ver y descargar XML BPMN">
-              <Button
-                type="text"
-                size="small"
-                icon={<EyeOutlined />}
-                onClick={() =>
-                  setXmlModal({
-                    open: true,
-                    definitionId: record.id,
-                    processName: record.name || record.key,
-                  })
-                }
-              >
-                XML
-              </Button>
-            </Tooltip>
-
-            <Tooltip title="Consultar versiones anteriores">
-              <Button
-                type="text"
-                size="small"
-                icon={<HistoryOutlined />}
-                onClick={() =>
-                  setVersionsDrawer({
-                    open: true,
-                    processKey: record.key,
-                    processName: record.name || record.key,
-                  })
-                }
-              >
-                Versiones
-              </Button>
-            </Tooltip>
+            {/* Menú Más Opciones */}
+            <Dropdown
+              menu={{ items: getDropdownItems(record) }}
+              trigger={["click"]}
+              placement="bottomRight"
+            >
+              <Tooltip title="Más opciones">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<MoreOutlined style={{ fontSize: 16 }} />}
+                />
+              </Tooltip>
+            </Dropdown>
           </Space>
         );
       },
     },
   ];
+
+  const currentList = data?.data ?? [];
+  const totalCount = data?.total ?? 0;
+  const activeCount = currentList.filter((item) => !item.suspended).length;
+  const suspendedCount = currentList.filter((item) => item.suspended).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -388,6 +512,79 @@ export function DefinitionsPage() {
         </Space>
       </div>
 
+      {/* Alerta de Error si la consulta falla */}
+      {isError && (
+        <Alert
+          type="error"
+          showIcon
+          message="Error al cargar el catálogo de procesos BPMN"
+          description={getErrorMessage(
+            error,
+            "No se pudo conectar con el motor de flujos. Por favor, verifica tu conexión o intenta nuevamente.",
+          )}
+          action={
+            <Button
+              size="small"
+              danger
+              icon={<ReloadOutlined spin={isFetching} />}
+              onClick={() => refetch()}
+            >
+              Reintentar
+            </Button>
+          }
+        />
+      )}
+
+      {/* Tarjetas Resumen / KPIs */}
+      <Row gutter={[16, 16]}>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic
+              title={<span style={{ fontSize: 12 }}>Total Publicados</span>}
+              value={totalCount}
+              prefix={<ApartmentOutlined style={{ color: "#3b82f6" }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 600 }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic
+              title={<span style={{ fontSize: 12 }}>Activos en Vista</span>}
+              value={activeCount}
+              prefix={<CheckCircleOutlined style={{ color: "#10b981" }} />}
+              valueStyle={{ fontSize: 20, fontWeight: 600, color: "#10b981" }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <Statistic
+              title={<span style={{ fontSize: 12 }}>Inactivos en Vista</span>}
+              value={suspendedCount}
+              prefix={<StopOutlined style={{ color: "#f97316" }} />}
+              valueStyle={{
+                fontSize: 20,
+                fontWeight: 600,
+                color: suspendedCount > 0 ? "#f97316" : "#64748b",
+              }}
+            />
+          </Card>
+        </Col>
+        <Col xs={12} sm={6}>
+          <Card size="small" styles={{ body: { padding: "12px 16px" } }}>
+            <div style={{ color: "rgba(0, 0, 0, 0.45)", fontSize: 12, marginBottom: 4 }}>
+              Filtro de Versiones
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              <Tag color={latestOnly ? "geekblue" : "purple"} style={{ margin: 0, fontWeight: 500 }}>
+                {latestOnly ? "Última Versión" : "Todas las Versiones"}
+              </Tag>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
       {/* Barra de Filtros y Búsqueda */}
       <Card size="small">
         <Space wrap style={{ width: "100%", justifyContent: "space-between" }}>
@@ -395,7 +592,14 @@ export function DefinitionsPage() {
             <Input
               placeholder="Buscar por nombre o clave..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchTerm(val);
+                if (!val.trim()) {
+                  setDebouncedSearch("");
+                  setPage(1);
+                }
+              }}
               onPressEnter={handleSearch}
               style={{ width: 240 }}
               allowClear
@@ -450,7 +654,35 @@ export function DefinitionsPage() {
           columns={columns}
           dataSource={data?.data ?? []}
           loading={isLoading}
-          scroll={{ x: 850 }}
+          scroll={{ x: 820 }}
+          locale={{
+            emptyText: debouncedSearch || statusFilter !== "all" || !latestOnly ? (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No se encontraron procesos que coincidan con los filtros aplicados"
+              >
+                <Button size="small" onClick={handleResetSearch}>
+                  Restablecer filtros
+                </Button>
+              </Empty>
+            ) : (
+              <Empty
+                image={Empty.PRESENTED_IMAGE_SIMPLE}
+                description="No hay procesos BPMN publicados actualmente en el motor"
+              >
+                {canDeploy && (
+                  <Button
+                    type="primary"
+                    size="small"
+                    icon={<CloudUploadOutlined />}
+                    onClick={() => setDeployModalOpen(true)}
+                  >
+                    Publicar primer proceso
+                  </Button>
+                )}
+              </Empty>
+            ),
+          }}
           pagination={{
             current: page,
             pageSize: pageSize,
@@ -504,6 +736,16 @@ export function DefinitionsPage() {
         initialProcessKey={startInstanceModal.processKey}
         onClose={() =>
           setStartInstanceModal({ open: false, processKey: undefined })
+        }
+      />
+
+      {/* Drawer para configurar asignaciones de responsables en Keycloak */}
+      <ProcessAssignmentsDrawer
+        open={assignmentsDrawer.open}
+        processKey={assignmentsDrawer.processKey}
+        processName={assignmentsDrawer.processName}
+        onClose={() =>
+          setAssignmentsDrawer({ open: false, processKey: null })
         }
       />
     </div>

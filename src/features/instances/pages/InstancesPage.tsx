@@ -35,7 +35,8 @@ import {
   message,
 } from "antd";
 import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useDefinitionsQuery } from "../../definitions/hooks/useDefinitionsQueries";
 import { InstanceDetailDrawer } from "../components/InstanceDetailDrawer";
 import { StartProcessModal } from "../components/StartProcessModal";
@@ -67,11 +68,14 @@ export function InstancesPage() {
     );
   }, [user]);
 
+  const [searchParams] = useSearchParams();
+  const urlProcessKey = searchParams.get("processKey") || undefined;
+
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [businessKeyInput, setBusinessKeyInput] = useState("");
   const [definitionKeyInput, setDefinitionKeyInput] = useState<string | undefined>(
-    undefined,
+    urlProcessKey,
   );
   const [startedByInput, setStartedByInput] = useState("");
 
@@ -82,7 +86,20 @@ export function InstancesPage() {
     businessKey?: string;
     processDefinitionKey?: string;
     startedBy?: string;
-  }>({});
+  }>({
+    ...(urlProcessKey ? { processDefinitionKey: urlProcessKey } : {}),
+  });
+
+  useEffect(() => {
+    if (urlProcessKey) {
+      setDefinitionKeyInput(urlProcessKey);
+      setAppliedFilters((prev) => ({
+        ...prev,
+        processDefinitionKey: urlProcessKey,
+      }));
+      setPage(1);
+    }
+  }, [urlProcessKey]);
 
   // Modals / Drawers state
   const [startModalOpen, setStartModalOpen] = useState(false);

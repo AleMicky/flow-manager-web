@@ -26,7 +26,7 @@ import {
   message,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDefinitionsQuery } from "../../definitions";
 import {
   useKeycloakCandidateRolesQuery,
@@ -39,7 +39,17 @@ import type { BpmnUserTaskAssignmentView } from "../types/keycloak-admin.types";
 
 const { Text } = Typography;
 
-export function BpmnTaskAssignmentsTab() {
+export interface BpmnTaskAssignmentsTabProps {
+  initialProcessKey?: string;
+  hideHeaderBanner?: boolean;
+  hideProcessSelector?: boolean;
+}
+
+export function BpmnTaskAssignmentsTab({
+  initialProcessKey,
+  hideHeaderBanner = false,
+  hideProcessSelector = false,
+}: BpmnTaskAssignmentsTabProps = {}) {
   const { data: definitionsPage, isLoading: loadingDefs } = useDefinitionsQuery(
     { size: 100 },
   );
@@ -62,7 +72,13 @@ export function BpmnTaskAssignmentsTab() {
 
   const [selectedProcessKey, setSelectedProcessKey] = useState<
     string | undefined
-  >(undefined);
+  >(initialProcessKey);
+
+  useEffect(() => {
+    if (initialProcessKey) {
+      setSelectedProcessKey(initialProcessKey);
+    }
+  }, [initialProcessKey]);
 
   const activeProcessKey = selectedProcessKey ?? uniqueProcesses[0]?.key;
 
@@ -461,20 +477,22 @@ export function BpmnTaskAssignmentsTab() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Banner Informativo */}
-      <Alert
-        type="info"
-        showIcon
-        icon={<InfoCircleOutlined style={{ color: "#0284c7" }} />}
-        message="Gestión Dinámica de Responsables y Aprobadores"
-        description={
-          <div>
-            Configura qué <strong>Grupos/Roles organizacionales</strong> o qué{" "}
-            <strong>Usuarios específicos de Keycloak</strong> pueden evaluar y atender cada tarea del trámite.
-            Los cambios se guardan directamente en base de datos y se sincronizan en caliente sin necesidad de
-            modificar el archivo BPMN ni reiniciar servidores.
-          </div>
-        }
-      />
+      {!hideHeaderBanner && (
+        <Alert
+          type="info"
+          showIcon
+          icon={<InfoCircleOutlined style={{ color: "#0284c7" }} />}
+          message="Gestión Dinámica de Responsables y Aprobadores"
+          description={
+            <div>
+              Configura qué <strong>Grupos/Roles organizacionales</strong> o qué{" "}
+              <strong>Usuarios específicos de Keycloak</strong> pueden evaluar y atender cada tarea del trámite.
+              Los cambios se guardan directamente en base de datos y se sincronizan en caliente sin necesidad de
+              modificar el archivo BPMN ni reiniciar servidores.
+            </div>
+          }
+        />
+      )}
 
       {usersError && (
         <Alert
@@ -497,26 +515,36 @@ export function BpmnTaskAssignmentsTab() {
         <Row align="middle" justify="space-between" gutter={[16, 16]}>
           <Col xs={24} lg={14}>
             <Space wrap size="middle">
-              <Space>
-                <ApartmentOutlined style={{ color: "#3b82f6", fontSize: 16 }} />
-                <Text strong>Trámite / Proceso:</Text>
-                <Select
-                  loading={loadingDefs}
-                  placeholder="Selecciona un proceso BPMN..."
-                  value={activeProcessKey}
-                  onChange={(val) => {
-                    setDrafts({});
-                    setSelectedProcessKey(val);
-                  }}
-                  style={{ width: 320 }}
-                  showSearch
-                  optionFilterProp="label"
-                  options={uniqueProcesses.map((p) => ({
-                    value: p.key,
-                    label: `${p.name} (${p.key} - v${p.version})`,
-                  }))}
-                />
-              </Space>
+              {!hideProcessSelector ? (
+                <Space>
+                  <ApartmentOutlined style={{ color: "#3b82f6", fontSize: 16 }} />
+                  <Text strong>Trámite / Proceso:</Text>
+                  <Select
+                    loading={loadingDefs}
+                    placeholder="Selecciona un proceso BPMN..."
+                    value={activeProcessKey}
+                    onChange={(val) => {
+                      setDrafts({});
+                      setSelectedProcessKey(val);
+                    }}
+                    style={{ width: 320 }}
+                    showSearch
+                    optionFilterProp="label"
+                    options={uniqueProcesses.map((p) => ({
+                      value: p.key,
+                      label: `${p.name} (${p.key} - v${p.version})`,
+                    }))}
+                  />
+                </Space>
+              ) : (
+                <Space>
+                  <ApartmentOutlined style={{ color: "#3b82f6", fontSize: 16 }} />
+                  <Text strong>Proceso:</Text>
+                  <Tag color="geekblue" style={{ fontSize: 13, padding: "2px 8px" }}>
+                    {activeProcessKey}
+                  </Tag>
+                </Space>
+              )}
 
               <Input
                 placeholder="Filtrar tareas (ej. existencias)..."
