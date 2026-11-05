@@ -1,6 +1,8 @@
 import {
   ApartmentOutlined,
   ArrowLeftOutlined,
+  CalendarOutlined,
+  CheckCircleFilled,
   CheckCircleOutlined,
   ClockCircleOutlined,
   EyeOutlined,
@@ -9,6 +11,7 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   HistoryOutlined,
+  PauseCircleOutlined,
   PictureOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -18,6 +21,9 @@ import {
 } from "@ant-design/icons";
 import {
   Alert,
+  Avatar,
+  Badge,
+  Breadcrumb,
   Button,
   Card,
   Col,
@@ -25,6 +31,7 @@ import {
   Image,
   Input,
   Row,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -32,6 +39,7 @@ import {
   Tabs,
   Tag,
   Timeline,
+  Tooltip,
   Typography,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -59,62 +67,95 @@ import {
 
 const { Title, Text } = Typography;
 
+type InstanceStatusFilter = "all" | "active" | "completed";
+
 export function ProcessTrackingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const initialProcessKey = searchParams.get("processKey") || undefined;
   const initialInstanceId = searchParams.get("instanceId") || null;
 
-  // Catálogo de definiciones y procesos
+  // Catálogo de definiciones y procesos activos
   const { data: definitionsPage, isLoading: loadingDefs } = useDefinitionsQuery(
-    { size: 100 },
+    { size: 100, latest: true, suspended: false },
   );
-  const { data: availableProcesses } = useAvailableProcessesQuery();
+  const { data: availableProcesses, isLoading: loadingAvailable } =
+    useAvailableProcessesQuery();
 
-  // Deduplicar procesos por clave tomando la versión más reciente
+  // Deduplicar procesos activos por clave tomando la versión más reciente
   const uniqueProcesses = useMemo(() => {
     const map = new Map<
       string,
-      { id: string; key: string; name: string; version: number }
+      {
+        id: string;
+        key: string;
+        name: string;
+        version?: number;
+        description?: string | null;
+      }
     >();
+
+    // Mapear nombres configurados en el catálogo de procesos activos
+    const availableByKey = new Map(
+      (availableProcesses ?? [])
+        .filter((p) => p.active !== false)
+        .map((p) => [p.processDefinitionKey || p.key, p]),
+    );
+
     for (const def of definitionsPage?.data ?? []) {
+      if (def.suspended) continue;
       const current = map.get(def.key);
-      if (!current || def.version > current.version) {
+      if (!current || def.version > (current.version ?? 0)) {
+        const configured = availableByKey.get(def.key);
         map.set(def.key, {
           id: def.id,
           key: def.key,
-          name: def.name || def.key,
+          name: configured?.name || def.name || def.key,
           version: def.version,
+          description: configured?.description || def.description,
         });
       }
     }
-    return Array.from(map.values());
-  }, [definitionsPage]);
 
-  // Proceso seleccionado (Criterio Principal de Búsqueda)
+    // Incluir procesos activos de availableProcesses si aún no están en el mapa
+    for (const [key, proc] of availableByKey.entries()) {
+      if (key && !map.has(key)) {
+        map.set(key, {
+          id: proc.id,
+          key,
+          name: proc.name || key,
+          description: proc.description,
+        });
+      }
+    }
+
+    return Array.from(map.values());
+  }, [definitionsPage, availableProcesses]);
+
+  // Proceso seleccionado (undefined = Todos los procesos activos)
   const [selectedProcessKey, setSelectedProcessKey] = useState<
     string | undefined
   >(initialProcessKey);
-
-  const activeProcessKey = selectedProcessKey ?? uniqueProcesses[0]?.key;
 
   // Instancia / Trámite actualmente seleccionado para consulta detallada
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(
     initialInstanceId,
   );
 
-  // Buscador de trámites por texto
+  // Buscador de trámites por texto y filtro de estado
   const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<InstanceStatusFilter>("all");
 
   // Pestaña activa del expediente
   const [activeTab, setActiveTab] = useState<string>("matrix");
 
-  // Query de instancias del tipo de proceso seleccionado
+  // Query de instancias según el proceso seleccionado (o todos si no se filtra)
   const {
     data: instancesData,
     isLoading: loadingInstances,
+    isFetching: fetchingInstances,
     refetch: refetchInstances,
   } = useInstancesQuery({
-    processDefinitionKey: activeProcessKey,
+    ...(selectedProcessKey ? { processDefinitionKey: selectedProcessKey } : {}),
     size: 100,
   });
 
@@ -127,6 +168,14 @@ export function ProcessTrackingPage() {
     selectedInstanceId ?? undefined,
     Boolean(selectedInstanceId),
   );
+
+  // Clave del proceso de la instancia seleccionada (para cargar asignaciones correctas)
+  const effectiveProcessKey = useMemo(() => {
+    if (instanceDetail?.processDefinitionId) {
+      return instanceDetail.processDefinitionId.split(":")[0];
+    }
+    return selectedProcessKey ?? uniqueProcesses[0]?.key;
+  }, [instanceDetail, selectedProcessKey, uniqueProcesses]);
 
   // Query del historial de tareas (las etapas por donde pasó y dónde está)
   const {
@@ -157,8 +206,8 @@ export function ProcessTrackingPage() {
 
   // Query de las asignaciones configuradas de las etapas BPMN para mostrar los roles responsables
   const { data: configuredAssignments } = useProcessTaskAssignmentsQuery(
-    activeProcessKey,
-    Boolean(activeProcessKey),
+    effectiveProcessKey,
+    Boolean(effectiveProcessKey),
   );
 
   const taskAssignmentsMap = useMemo(() => {
@@ -167,9 +216,38 @@ export function ProcessTrackingPage() {
     );
   }, [configuredAssignments]);
 
+  // Estadísticas sobre las instancias cargadas
+  const instanceStats = useMemo(() => {
+    const all = instancesData?.data ?? [];
+    const activeKeys = new Set(uniqueProcesses.map((p) => p.key));
+    const list =
+      !selectedProcessKey && activeKeys.size > 0
+        ? all.filter((inst) => {
+            const pKey = inst.processDefinitionId?.split(":")[0];
+            return !pKey || activeKeys.has(pKey);
+          })
+        : all;
+
+    const active = list.filter((i) => !i.ended).length;
+    const completed = list.filter((i) => i.ended).length;
+    return {
+      list,
+      total: list.length,
+      active,
+      completed,
+    };
+  }, [instancesData, selectedProcessKey, uniqueProcesses]);
+
   // Filtrado de trámites en la lista rápida
   const filteredInstances = useMemo(() => {
-    const list = instancesData?.data ?? [];
+    let list = instanceStats.list;
+
+    if (statusFilter === "active") {
+      list = list.filter((inst) => !inst.ended);
+    } else if (statusFilter === "completed") {
+      list = list.filter((inst) => inst.ended);
+    }
+
     if (!searchQuery.trim()) return list;
     const q = searchQuery.toLowerCase();
     return list.filter(
@@ -177,24 +255,41 @@ export function ProcessTrackingPage() {
         inst.businessKey?.toLowerCase().includes(q) ||
         inst.id.toLowerCase().includes(q) ||
         inst.startUserId?.toLowerCase().includes(q) ||
-        inst.registradoPor?.toLowerCase().includes(q),
+        inst.registradoPor?.toLowerCase().includes(q) ||
+        inst.processDefinitionId?.toLowerCase().includes(q),
     );
-  }, [instancesData, searchQuery]);
+  }, [instanceStats.list, statusFilter, searchQuery]);
 
   // Manejar cambio de proceso
-  const handleProcessChange = (procKey: string) => {
-    setSelectedProcessKey(procKey);
+  const handleProcessChange = (procKey?: string) => {
+    const normalized = procKey || undefined;
+    setSelectedProcessKey(normalized);
     setSelectedInstanceId(null);
-    setSearchParams({ processKey: procKey });
+    if (normalized) {
+      setSearchParams({ processKey: normalized });
+    } else {
+      setSearchParams({});
+    }
   };
 
   // Manejar selección de trámite
   const handleSelectInstance = (instanceId: string) => {
     setSelectedInstanceId(instanceId);
-    setSearchParams({
-      processKey: activeProcessKey ?? "",
-      instanceId,
-    });
+    const params: Record<string, string> = { instanceId };
+    if (selectedProcessKey) {
+      params.processKey = selectedProcessKey;
+    }
+    setSearchParams(params);
+  };
+
+  // Volver al listado
+  const handleBackToList = () => {
+    setSelectedInstanceId(null);
+    if (selectedProcessKey) {
+      setSearchParams({ processKey: selectedProcessKey });
+    } else {
+      setSearchParams({});
+    }
   };
 
   // Refrescar todo
@@ -207,96 +302,236 @@ export function ProcessTrackingPage() {
     }
   };
 
+  // Opciones enriquecidas del Select con contador / estado activo
+  const selectOptions = useMemo(() => {
+    return [
+      {
+        value: "",
+        label: `Todos los procesos activos (${uniqueProcesses.length})`,
+        meta: {
+          isAll: true,
+          name: "Todos los procesos activos",
+          key: `${uniqueProcesses.length} disponibles`,
+          version: undefined as number | undefined,
+        },
+      },
+      ...uniqueProcesses.map((p) => ({
+        value: p.key,
+        label: p.version
+          ? `${p.name} (${p.key} · v${p.version})`
+          : `${p.name} (${p.key})`,
+        meta: {
+          isAll: false,
+          name: p.name,
+          key: p.key,
+          version: p.version,
+        },
+      })),
+    ];
+  }, [uniqueProcesses]);
+
   // Columnas para la tabla de trámites cuando no hay uno seleccionado
   const instanceColumns: ColumnsType<ProcessInstance> = [
     {
-      title: "Trámite / Correlativo",
+      title: "Expediente / Correlativo",
       dataIndex: "businessKey",
       key: "businessKey",
+      width: 220,
       render: (businessKey: string | null, record) => (
-        <Space size="small">
-          <FileTextOutlined style={{ color: "#3b82f6" }} />
-          <div>
+        <Space size={10} align="center">
+          <div
+            style={{
+              width: 34,
+              height: 34,
+              borderRadius: 8,
+              background: record.ended ? "#f0fdf4" : "#eff6ff",
+              border: `1px solid ${record.ended ? "#bbf7d0" : "#bfdbfe"}`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: record.ended ? "#16a34a" : "#2563eb",
+              fontSize: 15,
+              flexShrink: 0,
+            }}
+          >
+            <FileTextOutlined />
+          </div>
+          <div style={{ lineHeight: 1.25 }}>
             <Text
               strong
-              style={{ color: "#2563eb", cursor: "pointer" }}
+              style={{
+                color: "#1e40af",
+                cursor: "pointer",
+                fontSize: 13,
+                display: "block",
+              }}
               onClick={() => handleSelectInstance(record.id)}
             >
-              {businessKey || record.id.substring(0, 12)}
+              {businessKey || `EXP-${record.id.substring(0, 8).toUpperCase()}`}
             </Text>
-            <div style={{ fontSize: 11, color: "#94a3b8" }}>
-              ID: {record.id.substring(0, 18)}...
-            </div>
+            <Tooltip title={`ID de instancia: ${record.id}`}>
+              <Text
+                type="secondary"
+                style={{ fontSize: 11, fontFamily: "monospace" }}
+              >
+                #{record.id.substring(0, 12)}…
+              </Text>
+            </Tooltip>
           </div>
         </Space>
       ),
     },
     {
-      title: "Ubicación / Etapa Actual",
+      title: "Tipo de Trámite",
+      dataIndex: "processDefinitionId",
+      key: "processDefinitionId",
+      render: (defId: string) => {
+        const friendlyName = getProcessFriendlyName(
+          defId,
+          definitionsPage?.data,
+          availableProcesses,
+        );
+        const procKey = defId?.split(":")[0] || "proceso";
+        return (
+          <div style={{ lineHeight: 1.3 }}>
+            <Text strong style={{ fontSize: 12.5, color: "#1e293b", display: "block" }}>
+              {friendlyName}
+            </Text>
+            <Text type="secondary" style={{ fontSize: 11 }}>
+              {procKey}
+            </Text>
+          </div>
+        );
+      },
+    },
+    {
+      title: "Etapa Actual / Estado",
       dataIndex: "activityId",
       key: "activityId",
+      width: 230,
       render: (activityId: string | null, record) => {
         if (record.ended) {
-          return <Tag color="success">Concluido / Finalizado</Tag>;
+          return (
+            <Tag
+              color="success"
+              icon={<CheckCircleOutlined />}
+              style={{
+                borderRadius: 12,
+                padding: "2px 10px",
+                fontSize: 11.5,
+                fontWeight: 500,
+              }}
+            >
+              Concluido / Finalizado
+            </Tag>
+          );
+        }
+        if (record.suspended) {
+          return (
+            <Tag
+              color="warning"
+              icon={<PauseCircleOutlined />}
+              style={{
+                borderRadius: 12,
+                padding: "2px 10px",
+                fontSize: 11.5,
+                fontWeight: 500,
+              }}
+            >
+              Pausado
+            </Tag>
+          );
         }
         const act = formatActivityName(activityId);
         return (
-          <Tag color="processing" icon={<SyncOutlined spin />}>
+          <Tag
+            color="processing"
+            icon={<SyncOutlined spin />}
+            style={{
+              borderRadius: 12,
+              padding: "2px 10px",
+              fontSize: 11.5,
+              fontWeight: 500,
+            }}
+          >
             {act.label}
           </Tag>
         );
       },
     },
     {
-      title: "Iniciado Por",
+      title: "Solicitante",
       key: "starter",
+      width: 180,
       render: (_, record) => {
         const starter = record.registradoPor || record.startUserId;
         return starter ? (
-          <Space size={4}>
-            <UserOutlined style={{ color: "#64748b", fontSize: 12 }} />
-            <Text style={{ fontSize: 12 }}>@{starter}</Text>
+          <Space size={8}>
+            <Avatar
+              size={24}
+              style={{
+                backgroundColor: "#dbeafe",
+                color: "#1d4ed8",
+                fontSize: 11,
+                fontWeight: 600,
+              }}
+              icon={<UserOutlined />}
+            />
+            <div style={{ lineHeight: 1.2 }}>
+              <Text style={{ fontSize: 12, fontWeight: 500, color: "#334155" }}>
+                {starter}
+              </Text>
+            </div>
           </Space>
         ) : (
-          <Text type="secondary">—</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            —
+          </Text>
         );
       },
     },
     {
-      title: "Fecha de Inicio",
+      title: "Registro y Duración",
       dataIndex: "startTime",
       key: "startTime",
-      render: (startTime?: string | null) =>
-        startTime ? (
-          <Space size={4} style={{ fontSize: 12 }}>
-            <ClockCircleOutlined style={{ color: "#94a3b8" }} />
-            <span>{dayjs(startTime).format("DD/MM/YYYY HH:mm")}</span>
-          </Space>
-        ) : (
-          <Text type="secondary">—</Text>
-        ),
-    },
-    {
-      title: "Tiempo Transcurrido",
-      key: "duration",
-      render: (_, record) => (
-        <Tag color="blue" style={{ fontSize: 11 }}>
-          {formatDuration(null, record.startTime, record.ended ? null : null)}
-        </Tag>
+      width: 190,
+      render: (startTime?: string | null, record?: ProcessInstance) => (
+        <div style={{ lineHeight: 1.35 }}>
+          {startTime ? (
+            <Space size={4} style={{ fontSize: 12, color: "#334155" }}>
+              <CalendarOutlined style={{ color: "#64748b", fontSize: 11 }} />
+              <span>{dayjs(startTime).format("DD/MM/YYYY HH:mm")}</span>
+            </Space>
+          ) : (
+            <Text type="secondary">—</Text>
+          )}
+          <div>
+            <Tag
+              bordered={false}
+              color={record?.ended ? "default" : "geekblue"}
+              style={{ fontSize: 10.5, marginTop: 2, padding: "0 6px" }}
+            >
+              <ClockCircleOutlined style={{ marginRight: 4 }} />
+              {formatDuration(null, record?.startTime, record?.ended ? null : null)}
+            </Tag>
+          </div>
+        </div>
       ),
     },
     {
       title: "Acción",
       key: "action",
-      align: "center",
+      align: "right",
+      width: 150,
       render: (_, record) => (
         <Button
           type="primary"
           size="small"
           icon={<EyeOutlined />}
           onClick={() => handleSelectInstance(record.id)}
+          style={{ borderRadius: 6, fontWeight: 500 }}
         >
-          Ver Trazabilidad
+          Ver Expediente
         </Button>
       ),
     },
@@ -304,7 +539,7 @@ export function ProcessTrackingPage() {
 
   // Datos amigables del trámite seleccionado
   const friendlyProcessName = getProcessFriendlyName(
-    instanceDetail?.processDefinitionId || activeProcessKey,
+    instanceDetail?.processDefinitionId || effectiveProcessKey,
     definitionsPage?.data,
     availableProcesses,
   );
@@ -313,9 +548,14 @@ export function ProcessTrackingPage() {
     ? formatActivityName(instanceDetail.activityId)
     : null;
 
+  const completedStagesCount = useMemo(
+    () => historicTasks.filter((t) => Boolean(t.endTime)).length,
+    [historicTasks],
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Cabecera Principal */}
+      {/* Cabecera Principal con identidad visual profesional */}
       <div
         style={{
           display: "flex",
@@ -325,115 +565,332 @@ export function ProcessTrackingPage() {
           gap: 12,
         }}
       >
-        <div>
-          <Title
-            level={4}
+        <Space size={12} align="center">
+          <div
             style={{
-              margin: 0,
+              width: 40,
+              height: 40,
+              borderRadius: 10,
+              background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              fontSize: 18,
+              justifyContent: "center",
+              color: "#ffffff",
+              fontSize: 20,
+              boxShadow: "0 4px 10px rgba(37, 99, 235, 0.2)",
             }}
           >
-            <FileSearchOutlined style={{ color: "#2563eb" }} />
-            Consulta y Trazabilidad de Trámites
-          </Title>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            Consulta la ruta, evaluadores responsables, tiempos de permanencia en cada etapa y documentos adjuntos.
-          </Text>
-        </div>
+            <FileSearchOutlined />
+          </div>
+          <div>
+            <Title
+              level={4}
+              style={{
+                margin: 0,
+                fontSize: 18,
+                fontWeight: 700,
+                color: "#0f172a",
+                lineHeight: 1.25,
+              }}
+            >
+              Consulta y Trazabilidad de Trámites
+            </Title>
+            <Text type="secondary" style={{ fontSize: 12.5 }}>
+              Supervisa en tiempo real la ruta de aprobación, responsables por etapa, tiempos de atención y expediente digital.
+            </Text>
+          </div>
+        </Space>
 
-        <Button
-          size="small"
-          icon={<ReloadOutlined spin={loadingInstances || loadingHistory} />}
-          onClick={handleRefresh}
-        >
-          Actualizar
-        </Button>
+        <Space size="small" wrap>
+          <Tag
+            color="green"
+            icon={<CheckCircleFilled />}
+            style={{
+              margin: 0,
+              padding: "3px 10px",
+              borderRadius: 14,
+              fontSize: 12,
+              fontWeight: 500,
+            }}
+          >
+            {uniqueProcesses.length}{" "}
+            {uniqueProcesses.length === 1 ? "proceso activo" : "procesos activos"}
+          </Tag>
+          <Button
+            size="middle"
+            icon={
+              <ReloadOutlined
+                spin={fetchingInstances || loadingHistory || loadingDetail}
+              />
+            }
+            onClick={handleRefresh}
+            style={{ borderRadius: 6 }}
+          >
+            Actualizar
+          </Button>
+        </Space>
       </div>
 
-      {/* Barra de Filtro Principal: CRITERIO POR TIPO DE TRÁMITE / PROCESO */}
+      {/* Barra de Filtro y Control Unificada */}
       <Card
         size="small"
-        styles={{ body: { padding: "10px 14px" } }}
+        styles={{ body: { padding: "14px 16px" } }}
         style={{
-          borderRadius: 8,
+          borderRadius: 10,
           borderColor: "#e2e8f0",
           background: "#ffffff",
+          boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
         }}
       >
-        <Row gutter={[12, 10]} align="middle">
-          <Col xs={24} md={12} lg={10}>
-            <Space size="small" style={{ width: "100%" }}>
-              <ApartmentOutlined style={{ color: "#3b82f6", fontSize: 15 }} />
-              <Text strong style={{ fontSize: 13, whiteSpace: "nowrap" }}>
-                Tipo de Trámite:
-              </Text>
+        <Row gutter={[14, 12]} align="middle">
+          {/* Selector de Tipo de Trámite (Procesos Activos) */}
+          <Col xs={24} lg={10}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <Space size={6}>
+                <ApartmentOutlined style={{ color: "#2563eb", fontSize: 13 }} />
+                <Text
+                  strong
+                  style={{
+                    fontSize: 11.5,
+                    color: "#475569",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Tipo de Trámite (Procesos Activos)
+                </Text>
+              </Space>
               <Select
-                size="small"
-                loading={loadingDefs}
-                placeholder="Seleccionar proceso..."
-                value={activeProcessKey}
-                onChange={handleProcessChange}
-                style={{ width: "100%", minWidth: 260 }}
+                size="middle"
+                loading={loadingDefs || loadingAvailable}
+                placeholder="Todos los procesos activos..."
+                value={selectedProcessKey ?? ""}
+                onChange={(val) => handleProcessChange(val || undefined)}
+                style={{ width: "100%" }}
                 showSearch
                 optionFilterProp="label"
-                options={uniqueProcesses.map((p) => ({
-                  value: p.key,
-                  label: `${p.name} (${p.key} - v${p.version})`,
-                }))}
+                options={selectOptions}
+                optionRender={(option) => {
+                  const meta = option.data.meta;
+                  if (meta?.isAll) {
+                    return (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          padding: "2px 0",
+                        }}
+                      >
+                        <Space size={8}>
+                          <Badge status="processing" color="#2563eb" />
+                          <Text strong style={{ fontSize: 13 }}>
+                            Todos los procesos activos
+                          </Text>
+                        </Space>
+                        <Tag color="blue" style={{ margin: 0, fontSize: 11 }}>
+                          {uniqueProcesses.length} activos
+                        </Tag>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                        padding: "2px 0",
+                      }}
+                    >
+                      <Space size={8} style={{ minWidth: 0 }}>
+                        <Badge status="success" />
+                        <div style={{ minWidth: 0 }}>
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              fontSize: 13,
+                              color: "#0f172a",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {meta?.name}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "#64748b",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {meta?.key}
+                          </div>
+                        </div>
+                      </Space>
+                      <Space size={4}>
+                        {meta?.version && (
+                          <Tag
+                            color="geekblue"
+                            bordered={false}
+                            style={{ margin: 0, fontSize: 11 }}
+                          >
+                            v{meta.version}
+                          </Tag>
+                        )}
+                        <Tag
+                          color="success"
+                          bordered={false}
+                          style={{ margin: 0, fontSize: 10.5 }}
+                        >
+                          Activo
+                        </Tag>
+                      </Space>
+                    </div>
+                  );
+                }}
               />
-            </Space>
+            </div>
           </Col>
 
-          <Col xs={24} md={12} lg={8}>
-            <Input
-              size="small"
-              placeholder="Buscar por correlativo, ID o solicitante..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
-              allowClear
-            />
+          {/* Buscador rápido */}
+          <Col xs={24} md={12} lg={7}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <Space size={6}>
+                <SearchOutlined style={{ color: "#64748b", fontSize: 13 }} />
+                <Text
+                  strong
+                  style={{
+                    fontSize: 11.5,
+                    color: "#475569",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Búsqueda Rápida
+                </Text>
+              </Space>
+              <Input
+                size="middle"
+                placeholder="Correlativo, ID o solicitante..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                prefix={<SearchOutlined style={{ color: "#94a3b8" }} />}
+                allowClear
+              />
+            </div>
           </Col>
 
-          <Col xs={24} lg={6} style={{ textAlign: "right" }}>
-            <Tag color="geekblue" style={{ fontSize: 12, padding: "2px 8px" }}>
-              {filteredInstances.length}{" "}
-              {filteredInstances.length === 1 ? "trámite" : "trámites"} registrados
-            </Tag>
+          {/* Filtro por estado + KPIs */}
+          <Col xs={24} md={12} lg={7}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  strong
+                  style={{
+                    fontSize: 11.5,
+                    color: "#475569",
+                    textTransform: "uppercase",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  Estado del Trámite
+                </Text>
+                <Text type="secondary" style={{ fontSize: 11.5 }}>
+                  Mostrando <strong>{filteredInstances.length}</strong> de{" "}
+                  {instanceStats.total}
+                </Text>
+              </div>
+              <Segmented
+                block
+                size="middle"
+                value={statusFilter}
+                onChange={(val) =>
+                  setStatusFilter(val as InstanceStatusFilter)
+                }
+                options={[
+                  {
+                    label: `Todos (${instanceStats.total})`,
+                    value: "all",
+                  },
+                  {
+                    label: `En Curso (${instanceStats.active})`,
+                    value: "active",
+                  },
+                  {
+                    label: `Concluidos (${instanceStats.completed})`,
+                    value: "completed",
+                  },
+                ]}
+              />
+            </div>
           </Col>
         </Row>
       </Card>
 
-      {/* VISTA 1: CUANDO NO SE HA SELECCIONADO UN TRÁMITE (TABLA DE EXPEDIENTES) */}
+      {/* VISTA 1: LISTADO DE EXPEDIENTES (CUANDO NO SE HA SELECCIONADO UN TRÁMITE) */}
       {!selectedInstanceId && (
         <Card
           size="small"
           styles={{ body: { padding: 0 } }}
           style={{
-            borderRadius: 8,
+            borderRadius: 10,
             borderColor: "#e2e8f0",
             overflow: "hidden",
+            boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
           }}
         >
           <Table<ProcessInstance>
             rowKey="id"
-            size="small"
+            size="middle"
             columns={instanceColumns}
             dataSource={filteredInstances}
             loading={loadingInstances}
-            pagination={{ pageSize: 12, showSizeChanger: false }}
+            scroll={{ x: 900 }}
+            onRow={(record) => ({
+              onClick: () => handleSelectInstance(record.id),
+              style: { cursor: "pointer" },
+            })}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: ["10", "20", "50"],
+              showTotal: (total, range) =>
+                `${range[0]}-${range[1]} de ${total} trámites`,
+            }}
             locale={{
               emptyText: (
                 <Empty
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
                   description={
-                    searchQuery
-                      ? `No se encontraron trámites con "${searchQuery}".`
-                      : "No hay trámites registrados para este tipo de proceso."
+                    <div style={{ color: "#64748b" }}>
+                      {searchQuery || statusFilter !== "all"
+                        ? "No se encontraron trámites que coincidan con los criterios de búsqueda."
+                        : "No hay trámites registrados para el proceso activo seleccionado."}
+                    </div>
                   }
-                />
+                >
+                  {(searchQuery || statusFilter !== "all" || selectedProcessKey) && (
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setSearchQuery("");
+                        setStatusFilter("all");
+                        handleProcessChange(undefined);
+                      }}
+                    >
+                      Ver todos los procesos activos
+                    </Button>
+                  )}
+                </Empty>
               ),
             }}
           />
@@ -443,112 +900,255 @@ export function ProcessTrackingPage() {
       {/* VISTA 2: EXPEDIENTE Y ÁRBOL DE TRAZABILIDAD DEL TRÁMITE SELECCIONADO */}
       {selectedInstanceId && (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {/* Botón para volver al listado */}
-          <div>
-            <Button
-              size="small"
-              icon={<ArrowLeftOutlined />}
-              onClick={() => setSelectedInstanceId(null)}
-            >
-              Volver a la lista de trámites
-            </Button>
+          {/* Barra de navegación contextual del expediente */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+            }}
+          >
+            <Space size={12} wrap>
+              <Button
+                size="small"
+                icon={<ArrowLeftOutlined />}
+                onClick={handleBackToList}
+                style={{ borderRadius: 6, fontWeight: 500 }}
+              >
+                Volver al listado
+              </Button>
+              <Breadcrumb
+                items={[
+                  {
+                    title: (
+                      <a
+                        onClick={(e) => {
+                          e.preventDefault();
+                          handleBackToList();
+                        }}
+                      >
+                        Trámites Activos
+                      </a>
+                    ),
+                  },
+                  {
+                    title: friendlyProcessName,
+                  },
+                  {
+                    title: (
+                      <Text strong style={{ color: "#1e40af" }}>
+                        {instanceDetail?.businessKey ||
+                          selectedInstanceId.substring(0, 12)}
+                      </Text>
+                    ),
+                  },
+                ]}
+              />
+            </Space>
           </div>
 
           {/* Tarjeta Ejecutiva de Resumen del Trámite */}
           <Card
             size="small"
-            styles={{ body: { padding: "12px 16px" } }}
+            styles={{ body: { padding: "16px 20px" } }}
             style={{
-              borderRadius: 8,
+              borderRadius: 10,
               border: "1px solid #bfdbfe",
-              background: "#f0f7ff",
+              background:
+                "linear-gradient(135deg, #eff6ff 0%, #f8fafc 60%, #ffffff 100%)",
+              boxShadow: "0 2px 8px rgba(37, 99, 235, 0.06)",
             }}
           >
             {loadingDetail ? (
-              <div style={{ textAlign: "center", padding: "20px 0" }}>
+              <div style={{ textAlign: "center", padding: "24px 0" }}>
                 <Spin description="Cargando expediente del trámite..." />
               </div>
             ) : instanceDetail ? (
-              <Row gutter={[16, 12]} align="middle">
-                <Col xs={24} md={8}>
+              <Row gutter={[20, 14]} align="middle">
+                <Col xs={24} md={7}>
                   <Text
                     type="secondary"
-                    style={{ fontSize: 11, textTransform: "uppercase" }}
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.4,
+                    }}
                   >
                     Expediente / Correlativo
                   </Text>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: "#1e3a8a" }}>
+                  <div
+                    style={{
+                      fontSize: 20,
+                      fontWeight: 700,
+                      color: "#1e3a8a",
+                      lineHeight: 1.25,
+                      marginTop: 2,
+                    }}
+                  >
                     {instanceDetail.businessKey || instanceDetail.id}
                   </div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    {friendlyProcessName}
-                  </Text>
+                  <Space size={6} style={{ marginTop: 4 }} wrap>
+                    <Tag
+                      color="blue"
+                      bordered={false}
+                      style={{ margin: 0, fontSize: 11 }}
+                    >
+                      {friendlyProcessName}
+                    </Tag>
+                  </Space>
                 </Col>
 
-                <Col xs={12} sm={6} md={5}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    ¿Dónde está ahora?
+                <Col xs={12} sm={8} md={6}>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.4,
+                    }}
+                  >
+                    Ubicación Actual
                   </Text>
-                  <div>
+                  <div style={{ marginTop: 4 }}>
                     {instanceDetail.ended ? (
-                      <Tag color="success" style={{ fontSize: 12, marginTop: 2 }}>
-                        🟢 Concluido con éxito
+                      <Tag
+                        color="success"
+                        icon={<CheckCircleOutlined />}
+                        style={{
+                          fontSize: 12,
+                          padding: "3px 10px",
+                          borderRadius: 12,
+                          fontWeight: 600,
+                        }}
+                      >
+                        Concluido con éxito
                       </Tag>
                     ) : (
                       <Tag
                         color="processing"
                         icon={<SyncOutlined spin />}
-                        style={{ fontSize: 12, marginTop: 2 }}
+                        style={{
+                          fontSize: 12,
+                          padding: "3px 10px",
+                          borderRadius: 12,
+                          fontWeight: 600,
+                        }}
                       >
                         {currentActivity?.label ?? "En revisión"}
                       </Tag>
                     )}
                   </div>
+                  <Text
+                    type="secondary"
+                    style={{ fontSize: 11, display: "block", marginTop: 4 }}
+                  >
+                    {completedStagesCount}{" "}
+                    {completedStagesCount === 1
+                      ? "etapa completada"
+                      : "etapas completadas"}
+                  </Text>
                 </Col>
 
-                <Col xs={12} sm={6} md={5}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    Solicitado por
+                <Col xs={12} sm={8} md={5}>
+                  <Text
+                    type="secondary"
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.4,
+                    }}
+                  >
+                    Solicitado Por
                   </Text>
-                  <div style={{ fontSize: 13, fontWeight: 600, marginTop: 2 }}>
-                    <UserOutlined style={{ marginRight: 4, color: "#3b82f6" }} />
-                    @{instanceDetail.registradoPor || instanceDetail.startUserId || "sistema"}
+                  <div
+                    style={{
+                      fontSize: 13.5,
+                      fontWeight: 600,
+                      color: "#0f172a",
+                      marginTop: 4,
+                    }}
+                  >
+                    <UserOutlined
+                      style={{ marginRight: 6, color: "#2563eb" }}
+                    />
+                    {instanceDetail.registradoPor ||
+                      instanceDetail.startUserId ||
+                      "sistema"}
                   </div>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
+                  <Text type="secondary" style={{ fontSize: 11.5 }}>
                     {instanceDetail.startTime
-                      ? dayjs(instanceDetail.startTime).format("DD/MM/YYYY HH:mm")
+                      ? dayjs(instanceDetail.startTime).format(
+                          "DD/MM/YYYY HH:mm",
+                        )
                       : "—"}
                   </Text>
                 </Col>
 
-                <Col xs={24} sm={12} md={6}>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    Tiempo Total Acumulado
-                  </Text>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: "#2563eb", marginTop: 2 }}>
-                    <ClockCircleOutlined style={{ marginRight: 6 }} />
-                    {formatDuration(null, instanceDetail.startTime, instanceDetail.ended ? null : null)}
+                <Col xs={24} sm={8} md={6}>
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #dbeafe",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                    }}
+                  >
+                    <Text
+                      type="secondary"
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.4,
+                      }}
+                    >
+                      Tiempo Total Transcurrido
+                    </Text>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 700,
+                        color: "#2563eb",
+                        marginTop: 2,
+                      }}
+                    >
+                      <ClockCircleOutlined style={{ marginRight: 6 }} />
+                      {formatDuration(
+                        null,
+                        instanceDetail.startTime,
+                        instanceDetail.ended ? null : null,
+                      )}
+                    </div>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      {instanceDetail.ended
+                        ? "Trámite finalizado"
+                        : "En curso continuo"}
+                    </Text>
                   </div>
-                  <Text type="secondary" style={{ fontSize: 11 }}>
-                    {instanceDetail.ended ? "Trámite finalizado" : "En curso continuo"}
-                  </Text>
                 </Col>
               </Row>
             ) : (
               <Alert
                 type="warning"
+                showIcon
                 message="No se pudo cargar la información del trámite seleccionado"
               />
             )}
           </Card>
 
-          {/* Contenido con Pestañas: Árbol de Trazabilidad / Diagrama BPMN / Documentos */}
+          {/* Contenido con Pestañas: Matriz / Árbol de Trazabilidad / Diagrama BPMN / Documentos */}
           <Card
             size="small"
             style={{
-              borderRadius: 8,
+              borderRadius: 10,
               borderColor: "#e2e8f0",
               background: "#ffffff",
+              boxShadow: "0 1px 3px rgba(15, 23, 42, 0.04)",
             }}
           >
             <Tabs
@@ -578,19 +1178,21 @@ export function ProcessTrackingPage() {
                   label: (
                     <Space size="small">
                       <HistoryOutlined />
-                      <span>Árbol de Trazabilidad y Etapas ({historicTasks.length + 1})</span>
+                      <span>
+                        Línea de Tiempo y Etapas ({historicTasks.length + 1})
+                      </span>
                     </Space>
                   ),
                   children: (
-                    <div style={{ padding: "8px 0" }}>
+                    <div style={{ padding: "12px 4px" }}>
                       {loadingHistory ? (
                         <div style={{ textAlign: "center", padding: "40px 0" }}>
-                          <Spin description="Construyendo árbol cronológico de etapas..." />
+                          <Spin description="Construyendo línea cronológica de etapas..." />
                         </div>
                       ) : (
                         <Timeline
                           mode="left"
-                          style={{ marginTop: 12 }}
+                          style={{ marginTop: 8 }}
                           items={[
                             // NODO 0: INICIO DEL TRÁMITE
                             {
@@ -600,13 +1202,15 @@ export function ProcessTrackingPage() {
                                   style={{
                                     backgroundColor: "#10b981",
                                     color: "#fff",
-                                    width: 24,
-                                    height: 24,
+                                    width: 26,
+                                    height: 26,
                                     borderRadius: "50%",
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
-                                    fontSize: 12,
+                                    fontSize: 13,
+                                    boxShadow:
+                                      "0 0 0 4px rgba(16, 185, 129, 0.15)",
                                   }}
                                 >
                                   <FileDoneOutlined />
@@ -616,10 +1220,11 @@ export function ProcessTrackingPage() {
                                 <Card
                                   size="small"
                                   style={{
-                                    borderRadius: 8,
-                                    border: "1px solid #d1fae5",
+                                    borderRadius: 10,
+                                    border: "1px solid #bbf7d0",
+                                    borderLeft: "4px solid #10b981",
                                     background: "#f0fdf4",
-                                    marginBottom: 16,
+                                    marginBottom: 14,
                                   }}
                                 >
                                   <div
@@ -632,8 +1237,12 @@ export function ProcessTrackingPage() {
                                     }}
                                   >
                                     <div>
-                                      <Tag color="green" style={{ fontSize: 11, margin: 0 }}>
-                                        Inicio de Solicitud
+                                      <Tag
+                                        color="success"
+                                        bordered={false}
+                                        style={{ fontSize: 11, margin: 0 }}
+                                      >
+                                        Hito Inicial
                                       </Tag>
                                       <div
                                         style={{
@@ -643,27 +1252,48 @@ export function ProcessTrackingPage() {
                                           marginTop: 2,
                                         }}
                                       >
-                                        Registro y Envío del Trámite
+                                        Registro y Apertura del Expediente
                                       </div>
                                     </div>
-                                    <Tag color="default" style={{ fontSize: 11 }}>
+                                    <Tag
+                                      color="default"
+                                      style={{
+                                        fontSize: 11,
+                                        borderRadius: 6,
+                                        margin: 0,
+                                      }}
+                                    >
+                                      <CalendarOutlined
+                                        style={{ marginRight: 4 }}
+                                      />
                                       {instanceDetail?.startTime
-                                        ? dayjs(instanceDetail.startTime).format("DD/MM/YYYY HH:mm:ss")
+                                        ? dayjs(instanceDetail.startTime).format(
+                                            "DD/MM/YYYY HH:mm:ss",
+                                          )
                                         : "—"}
                                     </Tag>
                                   </div>
 
-                                  <div style={{ marginTop: 6, fontSize: 12 }}>
-                                    <Space size="middle" wrap>
+                                  <div style={{ marginTop: 8, fontSize: 12 }}>
+                                    <Space size="large" wrap>
                                       <span>
-                                        <strong>Iniciado por:</strong> @
-                                        {instanceDetail?.registradoPor ||
-                                          instanceDetail?.startUserId ||
-                                          "usuario"}
+                                        <Text type="secondary">
+                                          Registrado por:
+                                        </Text>{" "}
+                                        <Text strong>
+                                          @
+                                          {instanceDetail?.registradoPor ||
+                                            instanceDetail?.startUserId ||
+                                            "usuario"}
+                                        </Text>
                                       </span>
                                       <span>
-                                        <strong>Correlativo:</strong>{" "}
-                                        {instanceDetail?.businessKey || "—"}
+                                        <Text type="secondary">
+                                          Correlativo:
+                                        </Text>{" "}
+                                        <Text strong>
+                                          {instanceDetail?.businessKey || "—"}
+                                        </Text>
                                       </span>
                                     </Space>
                                   </div>
@@ -690,15 +1320,20 @@ export function ProcessTrackingPage() {
                                 dot: (
                                   <div
                                     style={{
-                                      backgroundColor: isFinished ? "#10b981" : "#2563eb",
+                                      backgroundColor: isFinished
+                                        ? "#10b981"
+                                        : "#2563eb",
                                       color: "#fff",
-                                      width: 24,
-                                      height: 24,
+                                      width: 26,
+                                      height: 26,
                                       borderRadius: "50%",
                                       display: "flex",
                                       alignItems: "center",
                                       justifyContent: "center",
-                                      fontSize: 12,
+                                      fontSize: 13,
+                                      boxShadow: isFinished
+                                        ? "0 0 0 4px rgba(16, 185, 129, 0.12)"
+                                        : "0 0 0 4px rgba(37, 99, 235, 0.18)",
                                     }}
                                   >
                                     {isFinished ? (
@@ -712,15 +1347,20 @@ export function ProcessTrackingPage() {
                                   <Card
                                     size="small"
                                     style={{
-                                      borderRadius: 8,
+                                      borderRadius: 10,
                                       border: `1px solid ${
                                         isFinished ? "#e2e8f0" : "#93c5fd"
                                       }`,
-                                      background: isFinished ? "#ffffff" : "#f8fafc",
-                                      marginBottom: 16,
+                                      borderLeft: `4px solid ${
+                                        isFinished ? "#10b981" : "#2563eb"
+                                      }`,
+                                      background: isFinished
+                                        ? "#ffffff"
+                                        : "#f8fafc",
+                                      marginBottom: 14,
                                       boxShadow: isFinished
-                                        ? "none"
-                                        : "0 2px 8px rgba(37,99,235,0.08)",
+                                        ? "0 1px 2px rgba(15, 23, 42, 0.03)"
+                                        : "0 4px 12px rgba(37, 99, 235, 0.08)",
                                     }}
                                   >
                                     {/* Cabecera de la etapa */}
@@ -730,57 +1370,96 @@ export function ProcessTrackingPage() {
                                         justifyContent: "space-between",
                                         alignItems: "flex-start",
                                         flexWrap: "wrap",
-                                        gap: 6,
+                                        gap: 8,
                                       }}
                                     >
                                       <div>
-                                        <Space size={6} wrap>
-                                          <Text strong style={{ fontSize: 14 }}>
-                                            {idx + 1}. {task.name || task.taskDefinitionKey || "Etapa"}
+                                        <Space size={8} wrap align="center">
+                                          <Tag
+                                            color={
+                                              isFinished ? "default" : "blue"
+                                            }
+                                            bordered={false}
+                                            style={{
+                                              margin: 0,
+                                              fontWeight: 600,
+                                              fontSize: 11,
+                                            }}
+                                          >
+                                            Etapa {idx + 1}
+                                          </Tag>
+                                          <Text
+                                            strong
+                                            style={{
+                                              fontSize: 14,
+                                              color: "#0f172a",
+                                            }}
+                                          >
+                                            {task.name ||
+                                              task.taskDefinitionKey ||
+                                              "Etapa de Revisión"}
                                           </Text>
                                           {isFinished ? (
-                                            <Tag color="success" style={{ fontSize: 11, margin: 0 }}>
+                                            <Tag
+                                              color="success"
+                                              icon={<CheckCircleOutlined />}
+                                              style={{
+                                                fontSize: 11,
+                                                margin: 0,
+                                                borderRadius: 10,
+                                              }}
+                                            >
                                               Completada
                                             </Tag>
                                           ) : (
                                             <Tag
                                               color="processing"
                                               icon={<SyncOutlined spin />}
-                                              style={{ fontSize: 11, margin: 0 }}
+                                              style={{
+                                                fontSize: 11,
+                                                margin: 0,
+                                                borderRadius: 10,
+                                                fontWeight: 500,
+                                              }}
                                             >
-                                              🔵 EN CURSO (Activa ahora)
+                                              En Curso (Activa ahora)
                                             </Tag>
                                           )}
                                         </Space>
-                                        <div style={{ marginTop: 2 }}>
-                                          <Tag
-                                            color="geekblue"
-                                            style={{
-                                              fontFamily: "monospace",
-                                              fontSize: 10,
-                                              margin: 0,
-                                            }}
-                                          >
-                                            {task.taskDefinitionKey}
-                                          </Tag>
-                                        </div>
+                                        {task.taskDefinitionKey && (
+                                          <div style={{ marginTop: 4 }}>
+                                            <Text
+                                              type="secondary"
+                                              style={{
+                                                fontFamily: "monospace",
+                                                fontSize: 11,
+                                              }}
+                                            >
+                                              Código BPMN:{" "}
+                                              {task.taskDefinitionKey}
+                                            </Text>
+                                          </div>
+                                        )}
                                       </div>
 
                                       {/* Permanencia / Tiempos */}
                                       <Tag
-                                        color={isFinished ? "blue" : "orange"}
+                                        color={isFinished ? "geekblue" : "orange"}
                                         style={{
-                                          fontSize: 11,
+                                          fontSize: 11.5,
+                                          padding: "2px 8px",
+                                          borderRadius: 6,
                                           display: "inline-flex",
                                           alignItems: "center",
-                                          gap: 4,
+                                          gap: 5,
+                                          margin: 0,
                                         }}
                                       >
                                         <ClockCircleOutlined />
                                         <span>
                                           {isFinished
-                                            ? `Estuvo: ${durationText}`
-                                            : `Lleva en esta etapa: ${durationText}`}
+                                            ? `Duración: ${durationText}`
+                                            : `En espera: ${durationText}`}
                                         </span>
                                       </Tag>
                                     </div>
@@ -788,44 +1467,77 @@ export function ProcessTrackingPage() {
                                     {/* ¿Con quién estuvo / está? */}
                                     <div
                                       style={{
-                                        marginTop: 8,
-                                        padding: "6px 10px",
+                                        marginTop: 10,
+                                        padding: "8px 12px",
                                         backgroundColor: "#f8fafc",
-                                        borderRadius: 6,
-                                        border: "1px solid #f1f5f9",
+                                        borderRadius: 8,
+                                        border: "1px solid #e2e8f0",
                                         fontSize: 12,
                                       }}
                                     >
-                                      <Row gutter={[12, 6]}>
+                                      <Row gutter={[16, 8]} align="middle">
                                         <Col xs={24} sm={12}>
-                                          <Text type="secondary">Responsable directo:</Text>{" "}
-                                          {task.assignee ? (
-                                            <Tag color="geekblue" style={{ fontSize: 12 }}>
-                                              <UserOutlined style={{ marginRight: 4 }} />
-                                              @{task.assignee}
-                                            </Tag>
-                                          ) : (
-                                            <Text type="secondary" italic>
-                                              (Pendiente de reclamo)
+                                          <Space size={6} wrap>
+                                            <Text type="secondary">
+                                              Responsable asignado:
                                             </Text>
-                                          )}
+                                            {task.assignee ? (
+                                              <Tag
+                                                color="blue"
+                                                style={{
+                                                  fontSize: 12,
+                                                  margin: 0,
+                                                  borderRadius: 6,
+                                                }}
+                                              >
+                                                <UserOutlined
+                                                  style={{ marginRight: 4 }}
+                                                />
+                                                @{task.assignee}
+                                              </Tag>
+                                            ) : (
+                                              <Tag
+                                                color="default"
+                                                bordered={false}
+                                                style={{
+                                                  fontSize: 11.5,
+                                                  margin: 0,
+                                                }}
+                                              >
+                                                Pendiente de atención por el rol
+                                              </Tag>
+                                            )}
+                                          </Space>
                                         </Col>
 
                                         {assignedConfig?.candidateGroups &&
-                                          assignedConfig.candidateGroups.length > 0 && (
+                                          assignedConfig.candidateGroups
+                                            .length > 0 && (
                                             <Col xs={24} sm={12}>
-                                              <Text type="secondary">Roles / Grupos autorizados:</Text>{" "}
-                                              <Space size={4} wrap>
-                                                {assignedConfig.candidateGroups.map((g) => (
-                                                  <Tag
-                                                    key={g}
-                                                    color="purple"
-                                                    style={{ fontSize: 11, margin: 0 }}
-                                                  >
-                                                    <TeamOutlined style={{ marginRight: 2 }} />
-                                                    {g}
-                                                  </Tag>
-                                                ))}
+                                              <Space size={6} wrap>
+                                                <Text type="secondary">
+                                                  Roles autorizados:
+                                                </Text>
+                                                {assignedConfig.candidateGroups.map(
+                                                  (g) => (
+                                                    <Tag
+                                                      key={g}
+                                                      color="purple"
+                                                      bordered={false}
+                                                      style={{
+                                                        fontSize: 11,
+                                                        margin: 0,
+                                                      }}
+                                                    >
+                                                      <TeamOutlined
+                                                        style={{
+                                                          marginRight: 4,
+                                                        }}
+                                                      />
+                                                      {g}
+                                                    </Tag>
+                                                  ),
+                                                )}
                                               </Space>
                                             </Col>
                                           )}
@@ -836,21 +1548,25 @@ export function ProcessTrackingPage() {
                                     <div
                                       style={{
                                         marginTop: 8,
-                                        fontSize: 11,
+                                        fontSize: 11.5,
                                         color: "#64748b",
                                         display: "flex",
-                                        gap: 16,
+                                        gap: 20,
                                         flexWrap: "wrap",
                                       }}
                                     >
                                       <span>
-                                        <strong>Entrada:</strong>{" "}
-                                        {dayjs(task.startTime).format("DD/MM/YYYY HH:mm:ss")}
+                                        <strong>Inicio de etapa:</strong>{" "}
+                                        {dayjs(task.startTime).format(
+                                          "DD/MM/YYYY HH:mm:ss",
+                                        )}
                                       </span>
                                       <span>
-                                        <strong>Salida / Conclusión:</strong>{" "}
+                                        <strong>Conclusión:</strong>{" "}
                                         {task.endTime
-                                          ? dayjs(task.endTime).format("DD/MM/YYYY HH:mm:ss")
+                                          ? dayjs(task.endTime).format(
+                                              "DD/MM/YYYY HH:mm:ss",
+                                            )
                                           : "En atención actualmente"}
                                       </span>
                                     </div>
@@ -880,10 +1596,12 @@ export function ProcessTrackingPage() {
                           justifyContent: "space-between",
                           alignItems: "center",
                           marginBottom: 12,
+                          flexWrap: "wrap",
+                          gap: 8,
                         }}
                       >
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          Ruta oficial del proceso con la etapa actual coloreada en tiempo real:
+                        <Text type="secondary" style={{ fontSize: 12.5 }}>
+                          Diagrama oficial del flujo con la etapa actual resaltada en tiempo real:
                         </Text>
                         <Button
                           size="small"
@@ -914,6 +1632,7 @@ export function ProcessTrackingPage() {
                           size="small"
                           style={{
                             background: "#f8fafc",
+                            borderRadius: 8,
                             overflowX: "auto",
                             textAlign: "center",
                           }}
@@ -922,7 +1641,7 @@ export function ProcessTrackingPage() {
                             src={diagramUrl}
                             alt="Avance en Diagrama BPMN"
                             style={{ maxWidth: "100%", height: "auto" }}
-                            preview={{ mask: "Click para ampliar" }}
+                            preview={{ mask: "Click para ampliar diagrama" }}
                           />
                         </Card>
                       )}
